@@ -1,12 +1,4 @@
-import {
-  Dispatch,
-  FC,
-  RefObject,
-  SetStateAction,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { FC, RefObject, useEffect, useRef, useState } from "react";
 import Speaker0Icon from "../../../assets/svgs/speaker-0.svg?react";
 import Speaker1Icon from "../../../assets/svgs/speaker-1.svg?react";
 import Speaker2Icon from "../../../assets/svgs/speaker-2.svg?react";
@@ -36,10 +28,14 @@ export interface IVolumeControlProps {
   onMouseEnter: () => void;
   onMuteToggle: () => void;
   /**
+   * Called when the user interacts with the volume slider (e.g., mousedown).
+   * Used by the parent to track the last interacted player control element.
+   */
+  onInteraction: () => void;
+  /**
    * @param volume goes from 0 to 1.
    */
   onVolumeChange: (volume: number) => void;
-  setIsPinned: Dispatch<SetStateAction<boolean>>;
   toolTipBoundsRef: RefObject<HTMLElement | null>;
   volume: number;
 }
@@ -47,10 +43,10 @@ export interface IVolumeControlProps {
 export const VolumeControl: FC<IVolumeControlProps> = ({
   isMuted,
   isPinned,
+  onInteraction,
   onMouseEnter,
   onMuteToggle,
   onVolumeChange,
-  setIsPinned,
   toolTipBoundsRef,
   volume,
 }) => {
@@ -74,7 +70,7 @@ export const VolumeControl: FC<IVolumeControlProps> = ({
       if (event.button !== 0) return;
       // Prevents text selection.
       event.preventDefault();
-      setIsPinned(true);
+      onInteraction();
       const newVolume = getVolumeFromEvent({ event, sliderRef });
       if (newVolume !== undefined) {
         console.log("VolumeControl: setting volume:", newVolume);
@@ -102,7 +98,7 @@ export const VolumeControl: FC<IVolumeControlProps> = ({
     if (sliderRef.current) {
       sliderRef.current.addEventListener("mousedown", handleSliderMouseDown);
     }
-  }, [onVolumeChange, setIsPinned]);
+  }, [onVolumeChange, onInteraction]);
 
   /**
    * Renders the appropriate speaker icon based on mute state and volume level.

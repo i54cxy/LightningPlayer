@@ -43,7 +43,6 @@ pnpm lint          # ESLint
 - Interfaces for component props should end with `Props` e.g. `IButtonProps`.
 - Enums and their keys should use upper camel case: e.g. `ButtonVariant.Text`, or upper snake case for numeric and string constants: e.g. `ZIndex.TITLE_BAR`.
 - In `.styles.` files, css styles should have the suffix `Styles`; use `container` instead of `wrapper`. E.g. `buttonContainerStyles`.
-- Avoid using inline functions in JSX. Declare them outside of the render/return.
 
 ### File Naming and Structure
 
@@ -84,6 +83,10 @@ UI components in `src/ui-components/`:
 - Only pass refs to a function when the function updates the ref (i.e. ref.current = ...) otherwise pass the ref.current directly.
 
 - For the unmount/cancel flag in useEffects, always name the flag `cancelled` e.g. `let cancelled = false; ... if (!cancelled) // do stuff ... return () => { cancelled = true; }`.
+
+- Avoid using inline functions in JSX. Declare them outside of the render/return.
+
+- When creating enums, use values the same as the keys by default.
 
 #### Documentation
 
@@ -151,16 +154,27 @@ Schedules audio buffers using Web Audio API:
 
 Imperatively updates the progress bar elements by ID (`progress-bar-current`, `progress-bar-thumb`) to avoid React re-renders on every frame during playback.
 
-#### Player controls (`src/ui-components/level-one/player-control-overlay/PlayerControlOverlay.tsx`)
+#### Player controls (`src/ui-components/level-two/player-control-overlay/PlayerControlOverlay.tsx`)
 
-Shows/hides on hover. Contains: progress bar with preview thumbnail, play/pause button, and volume control.
+Shows/hides on hover. Contains: progress bar with preview thumbnail, play/pause button, volume control, settings button, and fullscreen button.
+
+##### Interaction tracking
+
+`PlayerControlElement` enum (`PlayerControlOverlay.types.ts`) lists all interactive elements: `FullscreenButton`, `Overlay`, `PlayButton`, `ProgressBar`, `SettingsButton`, `VolumeControl`.
+
+`handleInteraction(element)` is a centralized handler that every control calls when interacted with. It manages cleanup of states that should reset when a different control is used:
+
+- If the interacted element is not `VolumeControl`, un-hard-pin volume control.
+- If the interacted element is not `SettingsButton`, close the playback settings menu.
+
+`lastInteractedElementRef` tracks the last interacted element. When adding a new player control, add it to the `PlayerControlElement` enum and call `handleInteraction` with it. To add new cross-control cleanup logic, add a condition to `handleInteraction`.
 
 ##### Seeking
 
 - **Paused seek**: Calls `seek()` which updates `PlaybackClock`, then calls `startVideoIterator` to draw a single frame at the new position without starting playback.
 - **Playing seek**: Pauses playback first (stops all queued audio nodes), then resumes at the new position.
 
-##### Volume control (`src/ui-components/base/volume-control/VolumeControl.tsx`)
+##### Volume control (`src/ui-components/level-one/volume-control/VolumeControl.tsx`)
 
 Volume is stored as a 0-1 value in `volumeState` (`src/shared/atoms/volumeState.ts`, persisted via Jotai's `atomWithStorage`). A quadratic curve (`volume * volume`) is applied to the GainNode for more natural perceived loudness control. The `VolumeControl` component expands when pinned, and is pinned when
 
