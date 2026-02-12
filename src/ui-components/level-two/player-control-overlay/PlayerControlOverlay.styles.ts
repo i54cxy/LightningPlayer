@@ -148,7 +148,8 @@ const buttonContainerStyles: CSSObject = {
 
 export const leftContainerStyles = css({
   ...buttonContainerStyles,
-  justifySelf: "start",
+  justifyContent: "start",
+  width: "100%",
 });
 
 export const centerContainerStyles = css({
@@ -157,7 +158,8 @@ export const centerContainerStyles = css({
 
 export const rightContainerStyles = css({
   ...buttonContainerStyles,
-  justifySelf: "end",
+  justifyContent: "end",
+  width: "100%",
 });
 
 export const playButtonStyles = (theme: Theme) =>
@@ -215,6 +217,17 @@ export const playerControlTooltipStyles = (theme: Theme) =>
     marginTop: 0,
     top: "auto",
   });
+
+/** Positions PlaybackSettings above the progress bar, aligned with tooltips. */
+export const playbackSettingsPositionStyles = css({
+  bottom: "100%",
+  marginBottom:
+    buttonContainerMarginTop +
+    progressBarContainerHeight +
+    tooltipMarginBottom,
+  position: "absolute",
+  right: 0,
+});
 
 export const bottomControlsButtonStyles = (theme: Theme) =>
   css({

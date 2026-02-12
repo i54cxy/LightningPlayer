@@ -19,6 +19,7 @@ import {
   buttonControlsContainerStyles,
   centerContainerStyles,
   leftContainerStyles,
+  playbackSettingsPositionStyles,
   playButtonStyles,
   playerControlOverlayContainerStyles,
   playerControlTooltipStyles,
@@ -359,11 +360,19 @@ export const PlayerControlOverlay: FC<IPlayerControlOverlayProps> = ({
               boundsRef={progressBarContainerRef}
               css={tooltipContainerStyles}
               // showTooltip={true}
-              text="Settings"
+              text={
+                isSettingsOpen
+                  ? "Close Playback Settings"
+                  : "Open Playback Settings"
+              }
               tooltipStylesOverride={playerControlTooltipStyles}
             >
               <button
-                aria-label="Settings"
+                aria-label={
+                  isSettingsOpen
+                    ? "Close Playback Settings"
+                    : "Open Playback Settings"
+                }
                 css={bottomControlsButtonStyles}
                 onClick={handleOnClickSettingsButton}
               >
@@ -371,7 +380,9 @@ export const PlayerControlOverlay: FC<IPlayerControlOverlayProps> = ({
               </button>
             </Tooltip>
             {isSettingsOpen && (
-              <PlaybackSettings onClose={() => setIsSettingsOpen(false)} />
+              <div css={playbackSettingsPositionStyles}>
+                <PlaybackSettings />
+              </div>
             )}
           </div>
         </div>
