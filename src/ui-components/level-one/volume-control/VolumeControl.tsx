@@ -54,7 +54,6 @@ export const VolumeControl: FC<IVolumeControlProps> = ({
   toolTipBoundsRef,
   volume,
 }) => {
-  const [isDragging, setIsDragging] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const sliderRef = useRef<HTMLDivElement>(null);
 
@@ -71,13 +70,10 @@ export const VolumeControl: FC<IVolumeControlProps> = ({
   };
 
   useEffect(() => {
-    let cancelled = false;
-
     const handleSliderMouseDown = (event: MouseEvent) => {
       if (event.button !== 0) return;
       // Prevents text selection.
       event.preventDefault();
-      setIsDragging(true);
       setIsPinned(true);
       const newVolume = getVolumeFromEvent({ event, sliderRef });
       if (newVolume !== undefined) {
@@ -95,9 +91,6 @@ export const VolumeControl: FC<IVolumeControlProps> = ({
       };
 
       const handleMouseUp = () => {
-        if (!cancelled) {
-          setIsDragging(false);
-        }
         document.removeEventListener("mousemove", handleMouseMove);
         document.removeEventListener("mouseup", handleMouseUp);
       };
@@ -109,10 +102,6 @@ export const VolumeControl: FC<IVolumeControlProps> = ({
     if (sliderRef.current) {
       sliderRef.current.addEventListener("mousedown", handleSliderMouseDown);
     }
-
-    return () => {
-      cancelled = true;
-    };
   }, [onVolumeChange, setIsPinned]);
 
   /**
@@ -154,7 +143,6 @@ export const VolumeControl: FC<IVolumeControlProps> = ({
         boundsRef={toolTipBoundsRef}
         css={tooltipContainerStyles}
         ref={sliderRef}
-        showTooltip={isDragging}
         text={sliderAriaLabel}
         tooltipStylesOverride={tooltipStyles}
       >

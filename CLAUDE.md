@@ -43,6 +43,7 @@ pnpm lint          # ESLint
 - Interfaces for component props should end with `Props` e.g. `IButtonProps`.
 - Enums and their keys should use upper camel case: e.g. `ButtonVariant.Text`, or upper snake case for numeric and string constants: e.g. `ZIndex.TITLE_BAR`.
 - In `.styles.` files, css styles should have the suffix `Styles`; use `container` instead of `wrapper`. E.g. `buttonContainerStyles`.
+- Avoid using inline functions in JSX. Declare them outside of the render/return.
 
 ### File Naming and Structure
 
