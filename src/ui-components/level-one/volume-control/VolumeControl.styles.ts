@@ -69,10 +69,11 @@ export const sliderContainerStyles = (theme: Theme) =>
     transitionProperty: "opacity, transform",
     transitionTimingFunction:
       theme.motion.playerControls.button.transitionTimingFunction,
-    width: sliderWidth,
+    width: 0,
 
     "[data-is-volume-control-expanded=true] &": {
       opacity: 1,
+      width: sliderWidth,
       transform: "scaleX(1)",
     },
   });

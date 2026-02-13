@@ -1,11 +1,14 @@
+import { InputAudioTrack } from "mediabunny";
 import { FC, MouseEventHandler, RefObject, useRef, useState } from "react";
 import FullScreenMaximize from "../../../assets/svgs/full-screen-maximize.svg?react";
 import FullScreenMinimize from "../../../assets/svgs/full-screen-minimize.svg?react";
+import HeadphonesSoundWaveIcon from "../../../assets/svgs/headphones-sound-wave.svg?react";
 import PauseIcon from "../../../assets/svgs/pause.svg?react";
 import PlayIcon from "../../../assets/svgs/play.svg?react";
 import SettingsIcon from "../../../assets/svgs/setting.svg?react";
 import { updateProgressBarDOM } from "../../../route-components/player/updateProgressBarDOM";
 import { useDimensions } from "../../../shared/hooks/useDimensions";
+import { AudioTrackSelector } from "../../base/audio-track-selector/AudioTrackSelector";
 import { PlaybackSettings } from "../../base/playback-settings/PlaybackSettings";
 import { PreviewThumbnail } from "../../base/preview-thumbnail/PreviewThumbnail";
 import { previewThumbnailWidth } from "../../base/preview-thumbnail/PreviewThumbnail.styles";
@@ -14,6 +17,7 @@ import { VolumeControl } from "../../level-one/volume-control/VolumeControl";
 import { getProgressFromEvent } from "./getProgressFromEvent";
 import { getProgressPercentageFromEvent } from "./getProgressPercentageFromEvent";
 import {
+  audioTrackSelectorPositionStyles,
   bottomControlsButtonStyles,
   bottomControlsContainerStyles,
   buttonControlsContainerStyles,
@@ -36,6 +40,8 @@ import {
 import { PlayerControlElement } from "./PlayerControlOverlay.types";
 
 export interface IPlayerControlOverlayProps {
+  /** The list of available audio tracks. */
+  audioTracks: InputAudioTrack[];
   /**
    * Duration in seconds.
    */
@@ -59,6 +65,12 @@ export interface IPlayerControlOverlayProps {
   isPlaying: boolean;
   onMuteToggle: () => void;
   /**
+   * Callback when a different audio track is selected.
+   *
+   * @param index - The index of the selected audio track.
+   */
+  onSelectAudioTrack: (index: number) => void;
+  /**
    * @param volume from 0 to 100. This component simply passes it to VolumeControl.
    */
   onVolumeChange: (volume: number) => void;
@@ -75,10 +87,13 @@ export interface IPlayerControlOverlayProps {
    * Time in seconds.
    */
   seek(time: number): Promise<void>;
+  /** The index of the currently selected audio track. */
+  selectedAudioTrackIndex: number;
   volume: number;
 }
 
 export const PlayerControlOverlay: FC<IPlayerControlOverlayProps> = ({
+  audioTracks,
   duration,
   fullscreenContainerRef,
   getThumbnail,
@@ -86,11 +101,13 @@ export const PlayerControlOverlay: FC<IPlayerControlOverlayProps> = ({
   isMuted,
   isPlaying,
   onMuteToggle,
+  onSelectAudioTrack,
   onVolumeChange,
   pause,
   play,
   progressRef,
   seek,
+  selectedAudioTrackIndex,
   volume,
 }) => {
   // Toggles the opacity of the whole overlay.
@@ -102,6 +119,8 @@ export const PlayerControlOverlay: FC<IPlayerControlOverlayProps> = ({
   );
   // Applies hover styles to progress bar.
   const [isProgressBarHovered, setIsProgressBarHovered] = useState(false);
+  const [isAudioTrackSelectorOpen, setIsAudioTrackSelectorOpen] =
+    useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   // The VolumeControl is hard pinned when the user makes an update to the volume.
   // It stays pinned until the user interacts with another player control element.
@@ -124,6 +143,9 @@ export const PlayerControlOverlay: FC<IPlayerControlOverlayProps> = ({
    * @param element - The player control element that was interacted with.
    */
   const handleInteraction = (element: PlayerControlElement) => {
+    if (element !== PlayerControlElement.AudioTrackButton) {
+      setIsAudioTrackSelectorOpen(false);
+    }
     if (element !== PlayerControlElement.VolumeControl) {
       setIsVCHardPinned(false);
     }
@@ -160,6 +182,18 @@ export const PlayerControlOverlay: FC<IPlayerControlOverlayProps> = ({
   const handleOnClickSettingsButton = () => {
     handleInteraction(PlayerControlElement.SettingsButton);
     setIsSettingsOpen(!isSettingsOpen);
+  };
+
+  /** Audio track button toggles audio track selector menu. */
+  const handleOnClickAudioTrackButton = () => {
+    handleInteraction(PlayerControlElement.AudioTrackButton);
+    setIsAudioTrackSelectorOpen(!isAudioTrackSelectorOpen);
+  };
+
+  /** Selects an audio track and closes the menu. */
+  const handleSelectAudioTrack = (index: number) => {
+    onSelectAudioTrack(index);
+    setIsAudioTrackSelectorOpen(false);
   };
 
   /** Clicking on the overlay toggles playback. */
@@ -374,6 +408,30 @@ export const PlayerControlOverlay: FC<IPlayerControlOverlayProps> = ({
             <Tooltip
               boundsRef={progressBarContainerRef}
               css={tooltipContainerStyles}
+              showTooltip={isAudioTrackSelectorOpen ? false : undefined}
+              text={"Audio Track"}
+              tooltipStylesOverride={playerControlTooltipStyles}
+            >
+              <button
+                aria-label={"Audio Track"}
+                css={bottomControlsButtonStyles}
+                disabled={audioTracks.length === 0}
+                onClick={handleOnClickAudioTrackButton}
+              >
+                <HeadphonesSoundWaveIcon />
+              </button>
+              {isAudioTrackSelectorOpen && (
+                <AudioTrackSelector
+                  audioTracks={audioTracks}
+                  css={audioTrackSelectorPositionStyles}
+                  onSelectTrack={handleSelectAudioTrack}
+                  selectedTrackIndex={selectedAudioTrackIndex}
+                />
+              )}
+            </Tooltip>
+            <Tooltip
+              boundsRef={progressBarContainerRef}
+              css={tooltipContainerStyles}
               // showTooltip={true}
               text={isFullscreen ? "Exit Full Screen" : "Full Screen"}
               tooltipStylesOverride={playerControlTooltipStyles}
@@ -400,12 +458,10 @@ export const PlayerControlOverlay: FC<IPlayerControlOverlayProps> = ({
               >
                 <SettingsIcon />
               </button>
+              {isSettingsOpen && (
+                <PlaybackSettings css={playbackSettingsPositionStyles} />
+              )}
             </Tooltip>
-            {isSettingsOpen && (
-              <div css={playbackSettingsPositionStyles}>
-                <PlaybackSettings />
-              </div>
-            )}
           </div>
         </div>
       </div>

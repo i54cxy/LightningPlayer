@@ -7,6 +7,9 @@ import {
 } from "./PlaybackSettingsChip.styles";
 
 export interface IPlaybackSettingsChipProps {
+  /** Style override for the outmost container. */
+  className?: string;
+  ["data-toggled-on"]?: boolean;
   /** Whether the chip is disabled. */
   disabled?: boolean;
   /** The icon element displayed on the left side of the chip. */
@@ -32,19 +35,25 @@ export interface IPlaybackSettingsChipProps {
  * @returns The playback settings chip component.
  */
 export const PlaybackSettingsChip: FC<IPlaybackSettingsChipProps> = ({
+  className,
   disabled,
   icon,
   onClick,
   rightIcon,
   text,
+  ...htmlAttributes
 }) => {
   return (
-    <button css={chipContainerStyles} disabled={disabled} onClick={onClick}>
+    <button
+      className={className}
+      css={chipContainerStyles}
+      disabled={disabled}
+      onClick={onClick}
+      {...htmlAttributes}
+    >
       <span css={chipIconStyles}>{icon}</span>
       <span css={chipTextStyles}>{text}</span>
-      {rightIcon && (
-        <span css={chipRightIconContainerStyles}>{rightIcon}</span>
-      )}
+      {rightIcon && <span css={chipRightIconContainerStyles}>{rightIcon}</span>}
     </button>
   );
 };

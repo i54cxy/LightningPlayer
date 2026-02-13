@@ -45,7 +45,8 @@
     },
     "text": {
       "default": "rgb(241, 241, 241)",
-      "link": "rgb(62, 166, 255)"
+      "link": "rgb(62, 166, 255)",
+      "selected": "rgb(62, 166, 255)"
     },
     "titleBar": {
       "activeBackground": "rgb(31, 31, 31)",

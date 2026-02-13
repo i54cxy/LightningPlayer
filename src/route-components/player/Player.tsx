@@ -5,6 +5,7 @@ import {
   BlobSource,
   CanvasSink,
   Input,
+  InputAudioTrack,
   WrappedAudioBuffer,
   WrappedCanvas,
 } from "mediabunny";
@@ -33,6 +34,7 @@ export const Player: FC = () => {
   const files = useAtomValue(inputFilesState);
   const currentPlayingFile = files[0];
   const setTitleBarText = useSetAtom(titleBarTextState);
+
   const flipHorizontal = useAtomValue(flipHorizontalState);
   const flipHorizontalRef = useRef(flipHorizontal);
   const flipVertical = useAtomValue(flipVerticalState);
@@ -41,6 +43,10 @@ export const Player: FC = () => {
   const rotation = useAtomValue(rotationState);
   const rotationRef = useRef(rotation);
   const [volume, setVolume] = useAtom(volumeState);
+
+  // All audio tracks from the current file.
+  const [audioTracks, setAudioTracks] = useState<InputAudioTrack[]>([]);
+  const [selectedAudioTrackIndex, setSelectedAudioTrackIndex] = useState(0);
 
   // Progress in seconds. Stored in ref to avoid React re-renders on every frame.
   const progressRef = useRef(0);
@@ -256,10 +262,7 @@ export const Player: FC = () => {
     flipHorizontalRef.current = flipHorizontal;
     flipVerticalRef.current = flipVertical;
     rotationRef.current = rotation;
-    if (
-      playbackClockRef.current &&
-      !playbackClockRef.current.isPlaying
-    ) {
+    if (playbackClockRef.current && !playbackClockRef.current.isPlaying) {
       seek(playbackClockRef.current.currentTime);
     }
   }, [flipHorizontal, flipVertical, rotation, seek]);
@@ -308,8 +311,8 @@ export const Player: FC = () => {
       });
       const duration = await videoTracks[0].computeDuration();
 
-      const audioTracks = await input.getAudioTracks();
-      const currentAudioTrack = audioTracks[0];
+      const loadedAudioTracks = await input.getAudioTracks();
+      const currentAudioTrack = loadedAudioTracks[0];
 
       // Always create audio infrastructure even if there isn't an audio track.
       const audioContext: AudioContext = new AudioContext({
@@ -346,9 +349,11 @@ export const Player: FC = () => {
         thumbnailCacheRef.current = thumbnailCache;
         thumbnailCache.startAutoFill();
 
+        setAudioTracks(loadedAudioTracks);
         setCurrentAudioSink(audioSink);
         setCurrentVideoSink(videoSink);
         setDuration(duration);
+        setSelectedAudioTrackIndex(0);
 
         // Render first frame.
         await startVideoIterator({
@@ -513,6 +518,71 @@ export const Player: FC = () => {
   };
 
   /**
+   * Switches audio playback to the selected audio track. Re-initializes the
+   * audio context, gain node, playback clock, and audio sink for the new track.
+   * Preserves the current playback position.
+   *
+   * @param index - The index of the audio track to switch to.
+   */
+  const handleSelectAudioTrack = async (index: number) => {
+    if (index === selectedAudioTrackIndex) return;
+
+    const newTrack = audioTracks[index];
+    if (!newTrack) {
+      console.error("handleSelectAudioTrack: invalid track index.");
+      return;
+    }
+
+    const currentTime = playbackClockRef.current?.currentTime ?? 0;
+
+    // Stop current audio playback.
+    if (isPlaying) {
+      pause();
+    }
+
+    // Close old audio context.
+    if (audioContextRef.current) {
+      audioContextRef.current.close();
+    }
+
+    // Create new audio infrastructure for the selected track.
+    const audioContext = new AudioContext({
+      sampleRate: newTrack.sampleRate,
+    });
+    audioContextRef.current = audioContext;
+
+    const gainNode = audioContext.createGain();
+    gainNode.connect(audioContext.destination);
+    gainNode.gain.value = isMuted ? 0 : volume * volume;
+    gainNodeRef.current = gainNode;
+
+    const playbackClock = new PlaybackClock(audioContext);
+    playbackClock.seek(currentTime);
+    playbackClockRef.current = playbackClock;
+
+    const audioSink = new AudioBufferSink(newTrack);
+
+    setCurrentAudioSink(audioSink);
+    setSelectedAudioTrackIndex(index);
+
+    // Resume playback if it was playing before the switch.
+    if (isPlaying) {
+      setIsPlaying(true);
+      await audioContext.resume();
+      playbackClock.play();
+
+      void audioBufferIteratorRef.current?.return();
+      audioBufferIteratorRef.current = audioSink.buffers(currentTime);
+      runAudioIterator({
+        audioBufferIterator: audioBufferIteratorRef.current,
+        gainNode,
+        playbackClock,
+        queuedAudioNodes: queuedAudioNodesRef.current,
+      });
+    }
+  };
+
+  /**
    * Fetches thumbnail URL at timestamp with the the thumbnail cache.
    * Supplied to PreviewThumbnail.
    *
@@ -541,6 +611,7 @@ export const Player: FC = () => {
   return (
     <FullscreenContainer ref={fullscreenContainerRef}>
       <PlayerControlOverlay
+        audioTracks={audioTracks}
         duration={duration ?? 0}
         fullscreenContainerRef={fullscreenContainerRef}
         getThumbnail={getThumbnailCallback}
@@ -548,11 +619,13 @@ export const Player: FC = () => {
         isMuted={isMuted}
         isPlaying={isPlaying}
         onMuteToggle={handleMuteToggle}
+        onSelectAudioTrack={handleSelectAudioTrack}
         onVolumeChange={handleVolumeChange}
         pause={pause}
         play={play}
         progressRef={progressRef}
         seek={seek}
+        selectedAudioTrackIndex={selectedAudioTrackIndex}
         volume={volume}
       />
 
