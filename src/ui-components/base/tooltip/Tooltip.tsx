@@ -122,7 +122,7 @@ export const Tooltip: FC<ITooltipProps> = ({
       <div
         css={[tooltipStyles, tooltipStylesOverride]}
         data-tooltip-position={tooltipStylesOverride ? undefined : position}
-        data-show-tooltip={!!showTooltip}
+        data-show-tooltip={showTooltip}
         ref={tooltipRef}
         style={{ transform }}
       >

@@ -12,6 +12,9 @@
         "color": "rgba(255, 255, 255, 0.9)",
         "foreground": "rgb(255, 255, 255)"
       },
+      "playbackSettings": {
+        "background": "rgba(28, 28, 28, 0.9)"
+      },
       "previewThumbnail": {
         "background": "rgb(40, 40, 40)",
         "border": "rgba(255, 255, 255, 0.2)",
@@ -43,9 +46,6 @@
     "text": {
       "default": "rgb(241, 241, 241)",
       "link": "rgb(62, 166, 255)"
-    },
-    "playbackSettings": {
-      "background": "rgba(28, 28, 28, 0.9)"
     },
     "titleBar": {
       "activeBackground": "rgb(31, 31, 31)",

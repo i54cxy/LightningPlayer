@@ -7,7 +7,7 @@ import CloseIcon from "../../../assets/svgs/close.svg?react";
 import MaximizeIcon from "../../../assets/svgs/maximize.svg?react";
 import MinimizeIcon from "../../../assets/svgs/minimize.svg?react";
 import PinIcon from "../../../assets/svgs/pin.svg?react";
-import RestoreIcon from "../../../assets/svgs/restore.svg?react";
+import RestoreIcon from "../../../assets/svgs/restore-window.svg?react";
 import UnpinIcon from "../../../assets/svgs/unpin.svg?react";
 import { ROUTES } from "../../../route-components/routes";
 import { isWindowFocusedState } from "../../../shared/atoms/isWindowFocusedState";

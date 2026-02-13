@@ -19,6 +19,7 @@ import {
   buttonControlsContainerStyles,
   centerContainerStyles,
   leftContainerStyles,
+  playbackSettingsPositionStyles,
   playButtonStyles,
   playerControlOverlayContainerStyles,
   playerControlTooltipStyles,
@@ -32,6 +33,7 @@ import {
   tooltipContainerStyles,
   topContainerStyles,
 } from "./PlayerControlOverlay.styles";
+import { PlayerControlElement } from "./PlayerControlOverlay.types";
 
 export interface IPlayerControlOverlayProps {
   /**
@@ -109,13 +111,31 @@ export const PlayerControlOverlay: FC<IPlayerControlOverlayProps> = ({
   const [isVCSoftPinned, setIsVCSoftPinned] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
+  const lastInteractedElementRef = useRef<PlayerControlElement | undefined>(
+    undefined,
+  );
   const progressBarContainerRef = useRef<HTMLDivElement>(null);
   const progressBarContainerDimensions = useDimensions(progressBarContainerRef);
 
+  /**
+   * Centralized handler for player control interactions. Manages cleanup of
+   * states that should reset when a different control element is interacted with.
+   *
+   * @param element - The player control element that was interacted with.
+   */
+  const handleInteraction = (element: PlayerControlElement) => {
+    if (element !== PlayerControlElement.VolumeControl) {
+      setIsVCHardPinned(false);
+    }
+    if (element !== PlayerControlElement.SettingsButton) {
+      setIsSettingsOpen(false);
+    }
+    lastInteractedElementRef.current = element;
+  };
+
   /** Play button toggles playback. */
   const handleOnClickPlayButton = () => {
-    setIsSettingsOpen(false);
-    setIsVCHardPinned(false);
+    handleInteraction(PlayerControlElement.PlayButton);
     if (!isPlaying) {
       play();
     } else {
@@ -125,6 +145,7 @@ export const PlayerControlOverlay: FC<IPlayerControlOverlayProps> = ({
 
   /** Fullscreen button toggles if the player is fullscreen. */
   const handleOnClickFullscreenButton = async () => {
+    handleInteraction(PlayerControlElement.FullscreenButton);
     if (fullscreenContainerRef.current) {
       if (!isFullscreen) {
         fullscreenContainerRef.current.requestFullscreen();
@@ -137,8 +158,8 @@ export const PlayerControlOverlay: FC<IPlayerControlOverlayProps> = ({
 
   /** Settings button toggles playback settings menu. */
   const handleOnClickSettingsButton = () => {
+    handleInteraction(PlayerControlElement.SettingsButton);
     setIsSettingsOpen(!isSettingsOpen);
-    setIsVCHardPinned(false);
   };
 
   /** Clicking on the overlay toggles playback. */
@@ -146,7 +167,12 @@ export const PlayerControlOverlay: FC<IPlayerControlOverlayProps> = ({
     event,
   ) => {
     if (event.button === 0) {
-      handleOnClickPlayButton();
+      handleInteraction(PlayerControlElement.Overlay);
+      if (!isPlaying) {
+        play();
+      } else {
+        pause();
+      }
     }
   };
 
@@ -178,7 +204,7 @@ export const PlayerControlOverlay: FC<IPlayerControlOverlayProps> = ({
   ) => {
     if (event.button !== 0) return;
     event.preventDefault();
-    setIsVCHardPinned(false);
+    handleInteraction(PlayerControlElement.ProgressBar);
 
     const newProgress = getProgressFromEvent({
       duration,
@@ -242,6 +268,11 @@ export const PlayerControlOverlay: FC<IPlayerControlOverlayProps> = ({
     setHoverPercentage(percentage);
   };
 
+  /** Called when the user interacts with the volume slider. */
+  const handleVolumeControlInteraction = () => {
+    handleInteraction(PlayerControlElement.VolumeControl);
+    setIsVCHardPinned(true);
+  };
   const handleOnMouseEnterVolumeControl = () => {
     setIsVCSoftPinned(true);
   };
@@ -314,10 +345,10 @@ export const PlayerControlOverlay: FC<IPlayerControlOverlayProps> = ({
             <VolumeControl
               isMuted={isMuted}
               isPinned={isVCHardPinned || isVCSoftPinned}
+              onInteraction={handleVolumeControlInteraction}
               onMouseEnter={handleOnMouseEnterVolumeControl}
               onMuteToggle={onMuteToggle}
               onVolumeChange={onVolumeChange}
-              setIsPinned={setIsVCHardPinned}
               toolTipBoundsRef={progressBarContainerRef}
               volume={volume}
             />
@@ -358,12 +389,12 @@ export const PlayerControlOverlay: FC<IPlayerControlOverlayProps> = ({
             <Tooltip
               boundsRef={progressBarContainerRef}
               css={tooltipContainerStyles}
-              // showTooltip={true}
-              text="Settings"
+              showTooltip={isSettingsOpen ? false : undefined}
+              text={"Playback Settings"}
               tooltipStylesOverride={playerControlTooltipStyles}
             >
               <button
-                aria-label="Settings"
+                aria-label={"Playback Settings"}
                 css={bottomControlsButtonStyles}
                 onClick={handleOnClickSettingsButton}
               >
@@ -371,7 +402,9 @@ export const PlayerControlOverlay: FC<IPlayerControlOverlayProps> = ({
               </button>
             </Tooltip>
             {isSettingsOpen && (
-              <PlaybackSettings onClose={() => setIsSettingsOpen(false)} />
+              <div css={playbackSettingsPositionStyles}>
+                <PlaybackSettings />
+              </div>
             )}
           </div>
         </div>

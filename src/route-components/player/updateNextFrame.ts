@@ -7,26 +7,35 @@ import { PlaybackClock } from "./PlaybackClock";
 /**
  * Iterates over the video frame iterator until it finds a video frame in the future.
  *
- * @param asyncIdRef - Ref to track async operation validity. If the value changes during
+ * @param params.asyncIdRef - Ref to track async operation validity. If the value changes during
  *   iteration, the function exits early to prevent stale updates.
- * @param ctx - Canvas 2D rendering context.
- * @param nextFrameRef - Ref to store the next frame for the render loop.
- * @param playbackClock - PlaybackClock instance for timing.
- * @param screenDimensions - Current screen dimensions for drawing.
- * @param videoFrameIterator - The video frame async iterator to read from.
+ * @param params.ctx - Canvas 2D rendering context.
+ * @param params.flipHorizontal - Whether to flip the frame horizontally.
+ * @param params.flipVertical - Whether to flip the frame vertically.
+ * @param params.nextFrameRef - Ref to store the next frame for the render loop.
+ * @param params.playbackClock - PlaybackClock instance for timing.
+ * @param params.rotation - Rotation in radians, clockwise.
+ * @param params.screenDimensions - Current screen dimensions for drawing.
+ * @param params.videoFrameIterator - The video frame async iterator to read from.
  */
 export const updateNextFrame = async ({
   asyncIdRef,
   ctx,
+  flipHorizontal,
+  flipVertical,
   nextFrameRef,
   playbackClock,
+  rotation,
   screenDimensions,
   videoFrameIterator,
 }: {
   asyncIdRef: RefObject<number>;
   ctx: CanvasRenderingContext2D;
+  flipHorizontal: boolean;
+  flipVertical: boolean;
   nextFrameRef: RefObject<WrappedCanvas | undefined>;
   playbackClock: PlaybackClock;
+  rotation: number;
   screenDimensions: IDimensions;
   videoFrameIterator: AsyncGenerator<WrappedCanvas, void, unknown> | undefined;
 }) => {
@@ -56,6 +65,9 @@ export const updateNextFrame = async ({
       // );
       draw({
         ctx,
+        flipHorizontal,
+        flipVertical,
+        rotation,
         screenDimensions,
         wrappedCanvas: newNextFrame,
       });

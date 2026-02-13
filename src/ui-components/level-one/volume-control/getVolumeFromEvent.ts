@@ -1,6 +1,6 @@
 /**
- * @param event - Mouse event containing clientX position.
- * @param sliderRef - Ref to the slider element.
+ * @param params.event - Mouse event containing clientX position.
+ * @param params.sliderRef - Ref to the slider element.
  * @returns Volume (0-1) from mouse position relative to slider, or
  * undefined if the slider ref is not available or has zero width.
  */

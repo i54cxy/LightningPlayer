@@ -1,45 +1,56 @@
-import { FC, useEffect, useRef } from "react";
+import { FC, useState } from "react";
+import ChevronRightIcon from "../../../assets/svgs/chevron-right.svg?react";
+import FlipHorizontalIcon from "../../../assets/svgs/flip-horizontal.svg?react";
+import RotateClockwiseIcon from "../../../assets/svgs/rotate-clockwise.svg?react";
 import { playbackSettingsContainerStyles } from "./PlaybackSettings.styles";
-
-export interface IPlaybackSettingsProps {
-  onClose: () => void;
-}
-
-/**
- * TODO:
- *
- * 1. Fix settings button.
- * 2. Implement PlaybackSettings with two settings: 1. Pin controls 2. Rotate.
- */
+import { PlaybackSettingsMenu } from "./PlaybackSettings.types";
+import { PlaybackSettingsChip } from "./PlaybackSettingsChip";
+import { PlaybackSettingsFlipMenu } from "./PlaybackSettingsFlipMenu";
+import { PlaybackSettingsRotationMenu } from "./PlaybackSettingsRotationMenu";
 
 /**
  * A popup settings menu that appears above the progress bar, on top of the settings button.
+ * Supports navigation between a main menu and sub-menus.
  *
- * @param props - The component props.
- * @param props.onClose - Callback invoked when clicking outside the settings menu.
  * @returns The playback settings component.
  */
-export const PlaybackSettings: FC<IPlaybackSettingsProps> = ({ onClose }) => {
-  const containerRef = useRef<HTMLDivElement>(null);
+export const PlaybackSettings: FC = () => {
+  const [currentMenu, setCurrentMenu] = useState(PlaybackSettingsMenu.Main);
 
-  // Close when clicking outside.
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        containerRef.current &&
-        !containerRef.current.contains(event.target as Node)
-      ) {
-        onClose();
-      }
-    };
+  const handleFlipOnBack = () => setCurrentMenu(PlaybackSettingsMenu.Main);
 
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [onClose]);
+  const handleOnFlipClick = () =>
+    setCurrentMenu(PlaybackSettingsMenu.Flip);
+
+  const handleOnRotationClick = () =>
+    setCurrentMenu(PlaybackSettingsMenu.Rotation);
+
+  const handleRotationOnBack = () => setCurrentMenu(PlaybackSettingsMenu.Main);
 
   return (
-    <div css={playbackSettingsContainerStyles} ref={containerRef}>
-      {/* Empty for now - placeholder for settings content. */}
+    <div css={playbackSettingsContainerStyles}>
+      {currentMenu === PlaybackSettingsMenu.Main && (
+        <>
+          <PlaybackSettingsChip
+            icon={<FlipHorizontalIcon />}
+            onClick={handleOnFlipClick}
+            rightIcon={<ChevronRightIcon />}
+            text="Flip"
+          />
+          <PlaybackSettingsChip
+            icon={<RotateClockwiseIcon />}
+            onClick={handleOnRotationClick}
+            rightIcon={<ChevronRightIcon />}
+            text="Rotate"
+          />
+        </>
+      )}
+      {currentMenu === PlaybackSettingsMenu.Flip && (
+        <PlaybackSettingsFlipMenu onBack={handleFlipOnBack} />
+      )}
+      {currentMenu === PlaybackSettingsMenu.Rotation && (
+        <PlaybackSettingsRotationMenu onBack={handleRotationOnBack} />
+      )}
     </div>
   );
 };

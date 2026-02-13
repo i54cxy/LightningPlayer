@@ -15,16 +15,19 @@ declare module "@emotion/react" {
           color: string;
           foreground: string;
         };
-        progressBar: {
+        playbackSettings: {
           background: string;
-          hoverFill: string;
-          thumb: string;
         };
         previewThumbnail: {
           background: string;
           border: string;
           timestampBackground: string;
           timestampColor: string;
+        };
+        progressBar: {
+          background: string;
+          hoverFill: string;
+          thumb: string;
         };
         tooltip: {
           background: string;
@@ -46,9 +49,6 @@ declare module "@emotion/react" {
       text: {
         default: string;
         link: string;
-      };
-      playbackSettings: {
-        background: string;
       };
       titleBar: {
         activeBackground: string;

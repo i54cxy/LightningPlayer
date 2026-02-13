@@ -10,9 +10,12 @@ import {
 } from "mediabunny";
 import { FC, useCallback, useEffect, useRef, useState } from "react";
 import { inputFilesState } from "../../shared/atoms/inputFilesState";
-import { isMutedState } from "../../shared/atoms/isMutedState";
+import { flipHorizontalState } from "../../shared/atoms/player-controls/flipHorizontalState";
+import { flipVerticalState } from "../../shared/atoms/player-controls/flipVerticalState";
+import { isMutedState } from "../../shared/atoms/player-controls/isMutedState";
+import { rotationState } from "../../shared/atoms/player-controls/rotationState";
+import { volumeState } from "../../shared/atoms/player-controls/volumeState";
 import { titleBarTextState } from "../../shared/atoms/titleBarTextState";
-import { volumeState } from "../../shared/atoms/volumeState";
 import { useDimensions } from "../../shared/hooks/useDimensions";
 import { IDimensions } from "../../shared/types/dimensions";
 import { FullscreenContainer } from "../../ui-components/base/fullscreen-container/FullscreenContainer";
@@ -30,7 +33,13 @@ export const Player: FC = () => {
   const files = useAtomValue(inputFilesState);
   const currentPlayingFile = files[0];
   const setTitleBarText = useSetAtom(titleBarTextState);
+  const flipHorizontal = useAtomValue(flipHorizontalState);
+  const flipHorizontalRef = useRef(flipHorizontal);
+  const flipVertical = useAtomValue(flipVerticalState);
+  const flipVerticalRef = useRef(flipVertical);
   const [isMuted, setIsMuted] = useAtom(isMutedState);
+  const rotation = useAtomValue(rotationState);
+  const rotationRef = useRef(rotation);
   const [volume, setVolume] = useAtom(volumeState);
 
   // Progress in seconds. Stored in ref to avoid React re-renders on every frame.
@@ -191,14 +200,17 @@ export const Player: FC = () => {
       await startVideoIterator({
         asyncIdRef,
         ctx,
+        flipHorizontal,
+        flipVertical,
         nextFrameRef,
         playbackClock: playbackClockRef.current,
+        rotation,
         screenDimensions: screenDimensionsRef.current,
         videoFrameIteratorRef,
         videoSink: currentVideoSink,
       });
     },
-    [currentVideoSink, duration],
+    [currentVideoSink, duration, flipHorizontal, flipVertical, rotation],
   );
 
   // Initializing screenDimensionsRef.
@@ -238,6 +250,19 @@ export const Player: FC = () => {
       }
     }
   }, [screenDimensions, seek]);
+
+  // Sync transform refs and redraw when flip/rotation changes while paused.
+  useEffect(() => {
+    flipHorizontalRef.current = flipHorizontal;
+    flipVerticalRef.current = flipVertical;
+    rotationRef.current = rotation;
+    if (
+      playbackClockRef.current &&
+      !playbackClockRef.current.isPlaying
+    ) {
+      seek(playbackClockRef.current.currentTime);
+    }
+  }, [flipHorizontal, flipVertical, rotation, seek]);
 
   // Load files.
   useEffect(() => {
@@ -329,8 +354,11 @@ export const Player: FC = () => {
         await startVideoIterator({
           asyncIdRef,
           ctx,
+          flipHorizontal: flipHorizontalRef.current,
+          flipVertical: flipVerticalRef.current,
           nextFrameRef,
           playbackClock,
+          rotation: rotationRef.current,
           screenDimensions: screenDimensionsRef.current,
           videoFrameIteratorRef,
           videoSink,
@@ -399,6 +427,9 @@ export const Player: FC = () => {
           // );
           draw({
             ctx,
+            flipHorizontal: flipHorizontalRef.current,
+            flipVertical: flipVerticalRef.current,
+            rotation: rotationRef.current,
             screenDimensions: screenDimensionsRef.current,
             wrappedCanvas: nextFrame,
           });
@@ -408,8 +439,11 @@ export const Player: FC = () => {
           updateNextFrame({
             asyncIdRef,
             ctx,
+            flipHorizontal: flipHorizontalRef.current,
+            flipVertical: flipVerticalRef.current,
             nextFrameRef,
             playbackClock: playbackClockRef.current,
+            rotation: rotationRef.current,
             screenDimensions: screenDimensionsRef.current,
             videoFrameIterator: videoFrameIteratorRef.current,
           });

@@ -44,6 +44,10 @@ export const tooltipStyles = (theme: Theme) =>
       opacity: 1,
     },
 
+    "&[data-show-tooltip=false]": {
+      opacity: 0,
+    },
+
     // Auto-flip to top when data-position="top".
     "&[data-tooltip-position=top]": {
       bottom: "100%",

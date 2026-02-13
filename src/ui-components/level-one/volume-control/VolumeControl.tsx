@@ -1,12 +1,4 @@
-import {
-  Dispatch,
-  FC,
-  RefObject,
-  SetStateAction,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { FC, RefObject, useEffect, useRef, useState } from "react";
 import Speaker0Icon from "../../../assets/svgs/speaker-0.svg?react";
 import Speaker1Icon from "../../../assets/svgs/speaker-1.svg?react";
 import Speaker2Icon from "../../../assets/svgs/speaker-2.svg?react";
@@ -36,10 +28,14 @@ export interface IVolumeControlProps {
   onMouseEnter: () => void;
   onMuteToggle: () => void;
   /**
+   * Called when the user interacts with the volume slider (e.g., mousedown).
+   * Used by the parent to track the last interacted player control element.
+   */
+  onInteraction: () => void;
+  /**
    * @param volume goes from 0 to 1.
    */
   onVolumeChange: (volume: number) => void;
-  setIsPinned: Dispatch<SetStateAction<boolean>>;
   toolTipBoundsRef: RefObject<HTMLElement | null>;
   volume: number;
 }
@@ -47,14 +43,13 @@ export interface IVolumeControlProps {
 export const VolumeControl: FC<IVolumeControlProps> = ({
   isMuted,
   isPinned,
+  onInteraction,
   onMouseEnter,
   onMuteToggle,
   onVolumeChange,
-  setIsPinned,
   toolTipBoundsRef,
   volume,
 }) => {
-  const [isDragging, setIsDragging] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const sliderRef = useRef<HTMLDivElement>(null);
 
@@ -71,14 +66,11 @@ export const VolumeControl: FC<IVolumeControlProps> = ({
   };
 
   useEffect(() => {
-    let cancelled = false;
-
     const handleSliderMouseDown = (event: MouseEvent) => {
       if (event.button !== 0) return;
       // Prevents text selection.
       event.preventDefault();
-      setIsDragging(true);
-      setIsPinned(true);
+      onInteraction();
       const newVolume = getVolumeFromEvent({ event, sliderRef });
       if (newVolume !== undefined) {
         console.log("VolumeControl: setting volume:", newVolume);
@@ -95,9 +87,6 @@ export const VolumeControl: FC<IVolumeControlProps> = ({
       };
 
       const handleMouseUp = () => {
-        if (!cancelled) {
-          setIsDragging(false);
-        }
         document.removeEventListener("mousemove", handleMouseMove);
         document.removeEventListener("mouseup", handleMouseUp);
       };
@@ -109,11 +98,7 @@ export const VolumeControl: FC<IVolumeControlProps> = ({
     if (sliderRef.current) {
       sliderRef.current.addEventListener("mousedown", handleSliderMouseDown);
     }
-
-    return () => {
-      cancelled = true;
-    };
-  }, [onVolumeChange, setIsPinned]);
+  }, [onVolumeChange, onInteraction]);
 
   /**
    * Renders the appropriate speaker icon based on mute state and volume level.
@@ -154,7 +139,6 @@ export const VolumeControl: FC<IVolumeControlProps> = ({
         boundsRef={toolTipBoundsRef}
         css={tooltipContainerStyles}
         ref={sliderRef}
-        showTooltip={isDragging}
         text={sliderAriaLabel}
         tooltipStylesOverride={tooltipStyles}
       >
