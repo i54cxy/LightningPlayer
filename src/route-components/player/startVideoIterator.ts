@@ -12,6 +12,7 @@ export const startVideoIterator = async ({
   ctx,
   nextFrameRef,
   playbackClock,
+  rotation,
   screenDimensions,
   videoFrameIteratorRef,
   videoSink,
@@ -20,6 +21,7 @@ export const startVideoIterator = async ({
   ctx: CanvasRenderingContext2D;
   nextFrameRef: RefObject<WrappedCanvas | undefined>;
   playbackClock: PlaybackClock;
+  rotation: number;
   screenDimensions: IDimensions;
   videoFrameIteratorRef: RefObject<
     AsyncGenerator<WrappedCanvas, void, unknown> | undefined
@@ -57,6 +59,7 @@ export const startVideoIterator = async ({
     );
     draw({
       ctx,
+      rotation,
       screenDimensions,
       wrappedCanvas: firstFrame,
     });

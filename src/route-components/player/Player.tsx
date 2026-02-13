@@ -10,9 +10,10 @@ import {
 } from "mediabunny";
 import { FC, useCallback, useEffect, useRef, useState } from "react";
 import { inputFilesState } from "../../shared/atoms/inputFilesState";
-import { isMutedState } from "../../shared/atoms/isMutedState";
+import { isMutedState } from "../../shared/atoms/player-controls/isMutedState";
+import { rotationState } from "../../shared/atoms/player-controls/rotationState";
+import { volumeState } from "../../shared/atoms/player-controls/volumeState";
 import { titleBarTextState } from "../../shared/atoms/titleBarTextState";
-import { volumeState } from "../../shared/atoms/volumeState";
 import { useDimensions } from "../../shared/hooks/useDimensions";
 import { IDimensions } from "../../shared/types/dimensions";
 import { FullscreenContainer } from "../../ui-components/base/fullscreen-container/FullscreenContainer";
@@ -31,6 +32,8 @@ export const Player: FC = () => {
   const currentPlayingFile = files[0];
   const setTitleBarText = useSetAtom(titleBarTextState);
   const [isMuted, setIsMuted] = useAtom(isMutedState);
+  const rotation = useAtomValue(rotationState);
+  const rotationRef = useRef(rotation);
   const [volume, setVolume] = useAtom(volumeState);
 
   // Progress in seconds. Stored in ref to avoid React re-renders on every frame.
@@ -193,12 +196,13 @@ export const Player: FC = () => {
         ctx,
         nextFrameRef,
         playbackClock: playbackClockRef.current,
+        rotation,
         screenDimensions: screenDimensionsRef.current,
         videoFrameIteratorRef,
         videoSink: currentVideoSink,
       });
     },
-    [currentVideoSink, duration],
+    [currentVideoSink, duration, rotation],
   );
 
   // Initializing screenDimensionsRef.
@@ -238,6 +242,17 @@ export const Player: FC = () => {
       }
     }
   }, [screenDimensions, seek]);
+
+  // Sync rotationRef and redraw when rotation changes while paused.
+  useEffect(() => {
+    rotationRef.current = rotation;
+    if (
+      playbackClockRef.current &&
+      !playbackClockRef.current.isPlaying
+    ) {
+      seek(playbackClockRef.current.currentTime);
+    }
+  }, [rotation, seek]);
 
   // Load files.
   useEffect(() => {
@@ -331,6 +346,7 @@ export const Player: FC = () => {
           ctx,
           nextFrameRef,
           playbackClock,
+          rotation: rotationRef.current,
           screenDimensions: screenDimensionsRef.current,
           videoFrameIteratorRef,
           videoSink,
@@ -399,6 +415,7 @@ export const Player: FC = () => {
           // );
           draw({
             ctx,
+            rotation: rotationRef.current,
             screenDimensions: screenDimensionsRef.current,
             wrappedCanvas: nextFrame,
           });
@@ -410,6 +427,7 @@ export const Player: FC = () => {
             ctx,
             nextFrameRef,
             playbackClock: playbackClockRef.current,
+            rotation: rotationRef.current,
             screenDimensions: screenDimensionsRef.current,
             videoFrameIterator: videoFrameIteratorRef.current,
           });

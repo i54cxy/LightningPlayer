@@ -1,7 +1,9 @@
+import { useSetAtom } from "jotai";
 import { FC } from "react";
 import ChevronLeftIcon from "../../../assets/svgs/chevron-left.svg?react";
 import RotateClockwiseIcon from "../../../assets/svgs/rotate-clockwise.svg?react";
 import RotateCounterclockwiseIcon from "../../../assets/svgs/rotate-counterclockwise.svg?react";
+import { rotationState } from "../../../shared/atoms/player-controls/rotationState";
 import { PlaybackSettingsChip } from "./PlaybackSettingsChip";
 import {
   backButtonStyles,
@@ -25,6 +27,18 @@ export interface IPlaybackSettingsRotationMenuProps {
 export const PlaybackSettingsRotationMenu: FC<
   IPlaybackSettingsRotationMenuProps
 > = ({ onBack }) => {
+  const setRotation = useSetAtom(rotationState);
+
+  /** Rotates clockwise by 90 degrees (π/2 radians). */
+  const handleRotateClockwise = () => {
+    setRotation((prev) => prev + Math.PI / 2);
+  };
+
+  /** Rotates counterclockwise by 90 degrees (π/2 radians). */
+  const handleRotateCounterclockwise = () => {
+    setRotation((prev) => prev - Math.PI / 2);
+  };
+
   return (
     <>
       <button css={backButtonStyles} onClick={onBack}>
@@ -34,12 +48,12 @@ export const PlaybackSettingsRotationMenu: FC<
       <hr css={separatorStyles} />
       <PlaybackSettingsChip
         icon={<RotateClockwiseIcon />}
-        onClick={() => console.log("Rotate clockwise 90°")}
+        onClick={handleRotateClockwise}
         text="Rotate clockwise 90°"
       />
       <PlaybackSettingsChip
         icon={<RotateCounterclockwiseIcon />}
-        onClick={() => console.log("Rotate counterclockwise 90°")}
+        onClick={handleRotateCounterclockwise}
         text="Rotate counterclockwise 90°"
       />
     </>

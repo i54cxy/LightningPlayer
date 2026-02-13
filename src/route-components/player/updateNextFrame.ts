@@ -20,6 +20,7 @@ export const updateNextFrame = async ({
   ctx,
   nextFrameRef,
   playbackClock,
+  rotation,
   screenDimensions,
   videoFrameIterator,
 }: {
@@ -27,6 +28,7 @@ export const updateNextFrame = async ({
   ctx: CanvasRenderingContext2D;
   nextFrameRef: RefObject<WrappedCanvas | undefined>;
   playbackClock: PlaybackClock;
+  rotation: number;
   screenDimensions: IDimensions;
   videoFrameIterator: AsyncGenerator<WrappedCanvas, void, unknown> | undefined;
 }) => {
@@ -56,6 +58,7 @@ export const updateNextFrame = async ({
       // );
       draw({
         ctx,
+        rotation,
         screenDimensions,
         wrappedCanvas: newNextFrame,
       });
