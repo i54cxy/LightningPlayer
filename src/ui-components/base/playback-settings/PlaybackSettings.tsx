@@ -8,19 +8,23 @@ import { PlaybackSettingsChip } from "./PlaybackSettingsChip";
 import { PlaybackSettingsFlipMenu } from "./PlaybackSettingsFlipMenu";
 import { PlaybackSettingsRotationMenu } from "./PlaybackSettingsRotationMenu";
 
+export interface IPlaybackSettingsProps {
+  /** Style override for the outmost container. */
+  className?: string;
+}
+
 /**
  * A popup settings menu that appears above the progress bar, on top of the settings button.
  * Supports navigation between a main menu and sub-menus.
  *
  * @returns The playback settings component.
  */
-export const PlaybackSettings: FC = () => {
+export const PlaybackSettings: FC<IPlaybackSettingsProps> = ({ className }) => {
   const [currentMenu, setCurrentMenu] = useState(PlaybackSettingsMenu.Main);
 
   const handleFlipOnBack = () => setCurrentMenu(PlaybackSettingsMenu.Main);
 
-  const handleOnFlipClick = () =>
-    setCurrentMenu(PlaybackSettingsMenu.Flip);
+  const handleOnFlipClick = () => setCurrentMenu(PlaybackSettingsMenu.Flip);
 
   const handleOnRotationClick = () =>
     setCurrentMenu(PlaybackSettingsMenu.Rotation);
@@ -28,7 +32,7 @@ export const PlaybackSettings: FC = () => {
   const handleRotationOnBack = () => setCurrentMenu(PlaybackSettingsMenu.Main);
 
   return (
-    <div css={playbackSettingsContainerStyles}>
+    <div className={className} css={playbackSettingsContainerStyles}>
       {currentMenu === PlaybackSettingsMenu.Main && (
         <>
           <PlaybackSettingsChip

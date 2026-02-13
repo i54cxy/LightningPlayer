@@ -218,13 +218,20 @@ export const playerControlTooltipStyles = (theme: Theme) =>
     top: "auto",
   });
 
+/** Positions AudioTrackSelector above the progress bar, aligned with tooltips. */
+export const audioTrackSelectorPositionStyles = css({
+  bottom: "100%",
+  marginBottom:
+    buttonContainerMarginTop + progressBarContainerHeight + tooltipMarginBottom,
+  position: "absolute",
+  right: 0,
+});
+
 /** Positions PlaybackSettings above the progress bar, aligned with tooltips. */
 export const playbackSettingsPositionStyles = css({
   bottom: "100%",
   marginBottom:
-    buttonContainerMarginTop +
-    progressBarContainerHeight +
-    tooltipMarginBottom,
+    buttonContainerMarginTop + progressBarContainerHeight + tooltipMarginBottom,
   position: "absolute",
   right: 0,
 });

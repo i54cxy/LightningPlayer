@@ -30,7 +30,6 @@ export const tooltipStyles = (theme: Theme) =>
     pointerEvents: "none",
     position: "absolute",
     top: "100%",
-    transform: "translateX(-50%)",
     transition: "opacity 0.15s ease-in-out",
     whiteSpace: "nowrap",
     zIndex: ZIndex.TOOLTIP,

@@ -49,6 +49,7 @@ declare module "@emotion/react" {
       text: {
         default: string;
         link: string;
+        selected: string;
       };
       titleBar: {
         activeBackground: string;

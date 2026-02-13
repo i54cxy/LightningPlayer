@@ -7,6 +7,7 @@ import ResetIcon from "../../../assets/svgs/reset.svg?react";
 import { flipHorizontalState } from "../../../shared/atoms/player-controls/flipHorizontalState";
 import { flipVerticalState } from "../../../shared/atoms/player-controls/flipVerticalState";
 import { PlaybackSettingsChip } from "./PlaybackSettingsChip";
+import { toggleTextStyles } from "./PlaybackSettingsFlipMenu.styles";
 import {
   submenuBackButtonStyles,
   submenuBackButtonTextStyles,
@@ -56,11 +57,15 @@ export const PlaybackSettingsFlipMenu: FC<IPlaybackSettingsFlipMenuProps> = ({
       </button>
       <hr css={submenuSeparatorStyles} />
       <PlaybackSettingsChip
+        css={toggleTextStyles}
+        data-toggled-on={flipHorizontal}
         icon={<FlipHorizontalIcon />}
         onClick={handleFlipHorizontal}
         text="Flip horizontally"
       />
       <PlaybackSettingsChip
+        css={toggleTextStyles}
+        data-toggled-on={flipVertical}
         icon={<FlipVerticalIcon />}
         onClick={handleFlipVertical}
         text="Flip vertically"
