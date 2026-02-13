@@ -7,6 +7,8 @@ import {
 } from "./PlaybackSettingsChip.styles";
 
 export interface IPlaybackSettingsChipProps {
+  /** Whether the chip is disabled. */
+  disabled?: boolean;
   /** The icon element displayed on the left side of the chip. */
   icon: ReactNode;
   /** Click handler for the chip. */
@@ -22,6 +24,7 @@ export interface IPlaybackSettingsChipProps {
  * Used as a menu item within PlaybackSettings.
  *
  * @param props - The component props.
+ * @param props.disabled - Whether the chip is disabled.
  * @param props.icon - The icon element displayed on the left.
  * @param props.onClick - Click handler.
  * @param props.rightIcon - Optional right-side element.
@@ -29,13 +32,14 @@ export interface IPlaybackSettingsChipProps {
  * @returns The playback settings chip component.
  */
 export const PlaybackSettingsChip: FC<IPlaybackSettingsChipProps> = ({
+  disabled,
   icon,
   onClick,
   rightIcon,
   text,
 }) => {
   return (
-    <button css={chipContainerStyles} onClick={onClick}>
+    <button css={chipContainerStyles} disabled={disabled} onClick={onClick}>
       <span css={chipIconStyles}>{icon}</span>
       <span css={chipTextStyles}>{text}</span>
       {rightIcon && (

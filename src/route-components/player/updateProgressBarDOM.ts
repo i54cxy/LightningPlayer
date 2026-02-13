@@ -1,8 +1,8 @@
 /**
  * Imperatively updates the progress bar DOM elements to avoid React re-renders.
  *
- * @param duration - Video duration in seconds.
- * @param progress - Current playback progress in seconds.
+ * @param params.duration - Video duration in seconds.
+ * @param params.progress - Current playback progress in seconds.
  */
 export const updateProgressBarDOM = ({
   duration,

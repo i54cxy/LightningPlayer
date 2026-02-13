@@ -4,9 +4,8 @@ import { PreviewThumbnailCache } from "./PreviewThumbnailCache";
 /**
  * Fetches a thumbnail for the given timestamp, using cache if available.
  *
- * @param thumbnailCache - The thumbnail cache instance.
- * @param thumbnailVideoSink - A dedicated CanvasSink for thumbnail fetching (separate from playback sink).
- * @param timestamp - The timestamp in seconds.
+ * @param params.thumbnailCache - The thumbnail cache instance.
+ * @param params.timestamp - The timestamp in seconds.
  * @returns A promise that resolves to an object URL of the thumbnail image, or undefined if unavailable.
  */
 export const getThumbnail = async ({

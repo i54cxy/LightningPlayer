@@ -2,20 +2,26 @@ import { WrappedCanvas } from "mediabunny";
 import { IDimensions } from "../../shared/types/dimensions";
 
 /**
- * Draws the WrappedCanvas to the target canvas context, with optional rotation.
+ * Draws the WrappedCanvas to the target canvas context, with optional flip and rotation.
  *
  * @param params.ctx - The 2D rendering context of the target canvas.
+ * @param params.flipHorizontal - Whether to flip the frame horizontally.
+ * @param params.flipVertical - Whether to flip the frame vertically.
  * @param params.rotation - Rotation in radians, clockwise.
  * @param params.screenDimensions - The dimensions of the target canvas.
  * @param params.wrappedCanvas - The source video frame to draw.
  */
 export const draw = ({
   ctx,
+  flipHorizontal,
+  flipVertical,
   rotation,
   screenDimensions,
   wrappedCanvas,
 }: {
   ctx: CanvasRenderingContext2D;
+  flipHorizontal: boolean;
+  flipVertical: boolean;
   rotation: number;
   screenDimensions: IDimensions;
   wrappedCanvas: WrappedCanvas;
@@ -38,8 +44,9 @@ export const draw = ({
   ctx.clearRect(0, 0, screenDimensions.width, screenDimensions.height);
 
   ctx.save();
-  // Translate to the center of the screen, rotate, then draw centered.
+  // Translate to the center of the screen, flip, rotate, then draw centered.
   ctx.translate(screenDimensions.width / 2, screenDimensions.height / 2);
+  ctx.scale(flipHorizontal ? -1 : 1, flipVertical ? -1 : 1);
   ctx.rotate(rotation);
   ctx.drawImage(canvas, -dw / 2, -dh / 2, dw, dh);
   ctx.restore();

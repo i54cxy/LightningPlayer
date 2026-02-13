@@ -15,6 +15,12 @@ export const chipContainerStyles = css({
   "&:hover": {
     background: "rgba(255, 255, 255, 0.1)",
   },
+
+  "&:disabled": {
+    color: "rgba(255, 255, 255, 0.35)",
+    cursor: "default",
+    pointerEvents: "none",
+  },
 });
 
 export const chipIconStyles = css({

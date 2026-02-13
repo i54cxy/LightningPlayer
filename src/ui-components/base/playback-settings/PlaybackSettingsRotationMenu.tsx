@@ -1,15 +1,16 @@
-import { useSetAtom } from "jotai";
+import { useAtom } from "jotai";
 import { FC } from "react";
 import ChevronLeftIcon from "../../../assets/svgs/chevron-left.svg?react";
+import ResetIcon from "../../../assets/svgs/reset.svg?react";
 import RotateClockwiseIcon from "../../../assets/svgs/rotate-clockwise.svg?react";
 import RotateCounterclockwiseIcon from "../../../assets/svgs/rotate-counterclockwise.svg?react";
 import { rotationState } from "../../../shared/atoms/player-controls/rotationState";
 import { PlaybackSettingsChip } from "./PlaybackSettingsChip";
 import {
-  backButtonStyles,
-  backButtonTextStyles,
-  separatorStyles,
-} from "./PlaybackSettingsRotationMenu.styles";
+  submenuBackButtonStyles,
+  submenuBackButtonTextStyles,
+  submenuSeparatorStyles,
+} from "./PlaybackSettingsSubMenu.styles";
 
 export interface IPlaybackSettingsRotationMenuProps {
   /** Callback to navigate back to the main settings menu. */
@@ -27,7 +28,12 @@ export interface IPlaybackSettingsRotationMenuProps {
 export const PlaybackSettingsRotationMenu: FC<
   IPlaybackSettingsRotationMenuProps
 > = ({ onBack }) => {
-  const setRotation = useSetAtom(rotationState);
+  const [rotation, setRotation] = useAtom(rotationState);
+
+  /** Resets rotation to 0. */
+  const handleReset = () => {
+    setRotation(0);
+  };
 
   /** Rotates clockwise by 90 degrees (π/2 radians). */
   const handleRotateClockwise = () => {
@@ -41,11 +47,11 @@ export const PlaybackSettingsRotationMenu: FC<
 
   return (
     <>
-      <button css={backButtonStyles} onClick={onBack}>
+      <button css={submenuBackButtonStyles} onClick={onBack}>
         <ChevronLeftIcon />
-        <span css={backButtonTextStyles}>Rotate</span>
+        <span css={submenuBackButtonTextStyles}>Rotate</span>
       </button>
-      <hr css={separatorStyles} />
+      <hr css={submenuSeparatorStyles} />
       <PlaybackSettingsChip
         icon={<RotateClockwiseIcon />}
         onClick={handleRotateClockwise}
@@ -55,6 +61,13 @@ export const PlaybackSettingsRotationMenu: FC<
         icon={<RotateCounterclockwiseIcon />}
         onClick={handleRotateCounterclockwise}
         text="Rotate counterclockwise 90°"
+      />
+      <hr css={submenuSeparatorStyles} />
+      <PlaybackSettingsChip
+        disabled={rotation % (2 * Math.PI) === 0}
+        icon={<ResetIcon />}
+        onClick={handleReset}
+        text="Reset rotation"
       />
     </>
   );

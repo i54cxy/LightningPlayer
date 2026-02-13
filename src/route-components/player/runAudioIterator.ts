@@ -10,10 +10,10 @@ import { PlaybackClock } from "./PlaybackClock";
  * - Scheduling future buffers with precise timing.
  * - Playing partially elapsed buffers from the correct offset.
  *
- * @param audioBufferIterator - The audio buffer async iterator to read from.
- * @param gainNode - GainNode to connect audio sources to.
- * @param playbackClock - PlaybackClock instance for timing.
- * @param queuedAudioNodes - Set to track scheduled AudioBufferSourceNodes for cleanup.
+ * @param params.audioBufferIterator - The audio buffer async iterator to read from.
+ * @param params.gainNode - GainNode to connect audio sources to.
+ * @param params.playbackClock - PlaybackClock instance for timing.
+ * @param params.queuedAudioNodes - Set to track scheduled AudioBufferSourceNodes for cleanup.
  */
 export const runAudioIterator = async ({
   audioBufferIterator,

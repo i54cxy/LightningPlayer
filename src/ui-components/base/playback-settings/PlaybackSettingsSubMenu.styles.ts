@@ -1,6 +1,6 @@
 import { css } from "@emotion/react";
 
-export const backButtonStyles = css({
+export const submenuBackButtonStyles = css({
   alignItems: "center",
   background: "transparent",
   border: "none",
@@ -22,12 +22,12 @@ export const backButtonStyles = css({
   },
 });
 
-export const backButtonTextStyles = css({
+export const submenuBackButtonTextStyles = css({
   fontSize: 14,
   fontWeight: 500,
 });
 
-export const separatorStyles = css({
+export const submenuSeparatorStyles = css({
   backgroundColor: "rgba(255, 255, 255, 0.15)",
   border: "none",
   height: 1,

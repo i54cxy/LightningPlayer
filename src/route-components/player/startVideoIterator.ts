@@ -6,10 +6,23 @@ import { PlaybackClock } from "./PlaybackClock";
 
 /**
  * Creates a new video frame iterator and renders the first video frame.
+ *
+ * @param params.asyncIdRef - Ref to track async operation validity.
+ * @param params.ctx - The 2D rendering context of the target canvas.
+ * @param params.flipHorizontal - Whether to flip the frame horizontally.
+ * @param params.flipVertical - Whether to flip the frame vertically.
+ * @param params.nextFrameRef - Ref to store the next frame for the render loop.
+ * @param params.playbackClock - PlaybackClock instance for timing.
+ * @param params.rotation - Rotation in radians, clockwise.
+ * @param params.screenDimensions - Current screen dimensions for drawing.
+ * @param params.videoFrameIteratorRef - Ref to the video frame async iterator.
+ * @param params.videoSink - The CanvasSink to create a new iterator from.
  */
 export const startVideoIterator = async ({
   asyncIdRef,
   ctx,
+  flipHorizontal,
+  flipVertical,
   nextFrameRef,
   playbackClock,
   rotation,
@@ -19,6 +32,8 @@ export const startVideoIterator = async ({
 }: {
   asyncIdRef: RefObject<number>;
   ctx: CanvasRenderingContext2D;
+  flipHorizontal: boolean;
+  flipVertical: boolean;
   nextFrameRef: RefObject<WrappedCanvas | undefined>;
   playbackClock: PlaybackClock;
   rotation: number;
@@ -59,6 +74,8 @@ export const startVideoIterator = async ({
     );
     draw({
       ctx,
+      flipHorizontal,
+      flipVertical,
       rotation,
       screenDimensions,
       wrappedCanvas: firstFrame,

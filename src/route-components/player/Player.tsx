@@ -10,6 +10,8 @@ import {
 } from "mediabunny";
 import { FC, useCallback, useEffect, useRef, useState } from "react";
 import { inputFilesState } from "../../shared/atoms/inputFilesState";
+import { flipHorizontalState } from "../../shared/atoms/player-controls/flipHorizontalState";
+import { flipVerticalState } from "../../shared/atoms/player-controls/flipVerticalState";
 import { isMutedState } from "../../shared/atoms/player-controls/isMutedState";
 import { rotationState } from "../../shared/atoms/player-controls/rotationState";
 import { volumeState } from "../../shared/atoms/player-controls/volumeState";
@@ -31,6 +33,10 @@ export const Player: FC = () => {
   const files = useAtomValue(inputFilesState);
   const currentPlayingFile = files[0];
   const setTitleBarText = useSetAtom(titleBarTextState);
+  const flipHorizontal = useAtomValue(flipHorizontalState);
+  const flipHorizontalRef = useRef(flipHorizontal);
+  const flipVertical = useAtomValue(flipVerticalState);
+  const flipVerticalRef = useRef(flipVertical);
   const [isMuted, setIsMuted] = useAtom(isMutedState);
   const rotation = useAtomValue(rotationState);
   const rotationRef = useRef(rotation);
@@ -194,6 +200,8 @@ export const Player: FC = () => {
       await startVideoIterator({
         asyncIdRef,
         ctx,
+        flipHorizontal,
+        flipVertical,
         nextFrameRef,
         playbackClock: playbackClockRef.current,
         rotation,
@@ -202,7 +210,7 @@ export const Player: FC = () => {
         videoSink: currentVideoSink,
       });
     },
-    [currentVideoSink, duration, rotation],
+    [currentVideoSink, duration, flipHorizontal, flipVertical, rotation],
   );
 
   // Initializing screenDimensionsRef.
@@ -243,8 +251,10 @@ export const Player: FC = () => {
     }
   }, [screenDimensions, seek]);
 
-  // Sync rotationRef and redraw when rotation changes while paused.
+  // Sync transform refs and redraw when flip/rotation changes while paused.
   useEffect(() => {
+    flipHorizontalRef.current = flipHorizontal;
+    flipVerticalRef.current = flipVertical;
     rotationRef.current = rotation;
     if (
       playbackClockRef.current &&
@@ -252,7 +262,7 @@ export const Player: FC = () => {
     ) {
       seek(playbackClockRef.current.currentTime);
     }
-  }, [rotation, seek]);
+  }, [flipHorizontal, flipVertical, rotation, seek]);
 
   // Load files.
   useEffect(() => {
@@ -344,6 +354,8 @@ export const Player: FC = () => {
         await startVideoIterator({
           asyncIdRef,
           ctx,
+          flipHorizontal: flipHorizontalRef.current,
+          flipVertical: flipVerticalRef.current,
           nextFrameRef,
           playbackClock,
           rotation: rotationRef.current,
@@ -415,6 +427,8 @@ export const Player: FC = () => {
           // );
           draw({
             ctx,
+            flipHorizontal: flipHorizontalRef.current,
+            flipVertical: flipVerticalRef.current,
             rotation: rotationRef.current,
             screenDimensions: screenDimensionsRef.current,
             wrappedCanvas: nextFrame,
@@ -425,6 +439,8 @@ export const Player: FC = () => {
           updateNextFrame({
             asyncIdRef,
             ctx,
+            flipHorizontal: flipHorizontalRef.current,
+            flipVertical: flipVerticalRef.current,
             nextFrameRef,
             playbackClock: playbackClockRef.current,
             rotation: rotationRef.current,

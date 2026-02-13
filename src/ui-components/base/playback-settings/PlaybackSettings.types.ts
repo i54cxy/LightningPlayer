@@ -1,4 +1,5 @@
 export enum PlaybackSettingsMenu {
-  Main,
-  Rotation,
+  Flip = "Flip",
+  Main = "Main",
+  Rotation = "Rotation",
 }
