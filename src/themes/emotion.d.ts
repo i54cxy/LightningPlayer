@@ -29,6 +29,9 @@ declare module "@emotion/react" {
           hoverFill: string;
           thumb: string;
         };
+        timestamp: {
+          background: string;
+        };
         tooltip: {
           background: string;
           color: string;

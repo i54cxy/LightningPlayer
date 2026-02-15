@@ -29,6 +29,7 @@ import { runAudioIterator } from "./runAudioIterator";
 import { startVideoIterator } from "./startVideoIterator";
 import { updateNextFrame } from "./updateNextFrame";
 import { updateProgressBarDOM } from "./updateProgressBarDOM";
+import { updateTimestampDOM } from "./updateTimestampDOM";
 
 export const Player: FC = () => {
   const files = useAtomValue(inputFilesState);
@@ -457,6 +458,10 @@ export const Player: FC = () => {
         if (!isDraggingProgressBarRef.current) {
           progressRef.current = playbackTime;
           updateProgressBarDOM({
+            duration,
+            progress: playbackTime,
+          });
+          updateTimestampDOM({
             duration,
             progress: playbackTime,
           });

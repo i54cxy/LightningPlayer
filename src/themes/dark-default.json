@@ -26,6 +26,9 @@
         "hoverFill": "rgba(200, 200, 200, 0.7)",
         "thumb": "rgb(255, 0, 51)"
       },
+      "timestamp": {
+        "background": "rgba(28, 28, 28, 0.9)"
+      },
       "tooltip": {
         "background": "rgba(50, 50, 50, 0.6)",
         "color": "rgb(255, 255, 255)"
