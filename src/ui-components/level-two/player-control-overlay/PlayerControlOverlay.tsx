@@ -1,5 +1,12 @@
 import { InputAudioTrack } from "mediabunny";
-import { FC, MouseEventHandler, RefObject, useRef, useState } from "react";
+import {
+  FC,
+  MouseEventHandler,
+  RefObject,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import FullScreenMaximize from "../../../assets/svgs/full-screen-maximize.svg?react";
 import FullScreenMinimize from "../../../assets/svgs/full-screen-minimize.svg?react";
 import HeadphonesSoundWaveIcon from "../../../assets/svgs/headphones-sound-wave.svg?react";
@@ -12,8 +19,8 @@ import { AudioTrackSelector } from "../../base/audio-track-selector/AudioTrackSe
 import { PlaybackSettings } from "../../base/playback-settings/PlaybackSettings";
 import { PreviewThumbnail } from "../../base/preview-thumbnail/PreviewThumbnail";
 import { previewThumbnailWidth } from "../../base/preview-thumbnail/PreviewThumbnail.styles";
-import { Tooltip } from "../../base/tooltip/Tooltip";
 import { Timestamp } from "../../base/timestamp/Timestamp";
+import { Tooltip } from "../../base/tooltip/Tooltip";
 import { VolumeControl } from "../../level-one/volume-control/VolumeControl";
 import { getProgressFromEvent } from "./getProgressFromEvent";
 import { getProgressPercentageFromEvent } from "./getProgressPercentageFromEvent";
@@ -39,6 +46,7 @@ import {
   topContainerStyles,
 } from "./PlayerControlOverlay.styles";
 import {
+  IDLE_TIMEOUT_MS,
   PlayerControlElement,
   progressBarCurrentId,
   progressBarThumbId,
@@ -116,7 +124,7 @@ export const PlayerControlOverlay: FC<IPlayerControlOverlayProps> = ({
   volume,
 }) => {
   // Toggles the opacity of the whole overlay.
-  const [isHovered, setIsHovered] = useState(true);
+  const [isOverlayShown, setIsOverlayShown] = useState(true);
   // HoverPercentage from 0 to 1. Undefined means not hovering.
   // Used to position PreviewThumbnail and render the fill bar.
   const [hoverPercentage, setHoverPercentage] = useState<number | undefined>(
@@ -135,11 +143,50 @@ export const PlayerControlOverlay: FC<IPlayerControlOverlayProps> = ({
   const [isVCSoftPinned, setIsVCSoftPinned] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
+  const idleTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
   const lastInteractedElementRef = useRef<PlayerControlElement | undefined>(
     undefined,
   );
   const progressBarContainerRef = useRef<HTMLDivElement>(null);
+  const shouldBlockIdleHideRef = useRef(false);
   const progressBarContainerDimensions = useDimensions(progressBarContainerRef);
+
+  // Sync shouldBlockIdleHideRef with current state so the idle timer callback
+  // always reads the latest values without stale closures.
+  useEffect(() => {
+    shouldBlockIdleHideRef.current =
+      isAudioTrackSelectorOpen || isProgressBarHovered || isSettingsOpen;
+  }, [isAudioTrackSelectorOpen, isProgressBarHovered, isSettingsOpen]);
+
+  /**
+   * Starts (or restarts) the idle timer. When the timer expires and no
+   * blocking condition is active, the overlay will be hidden.
+   */
+  const startIdleTimer = () => {
+    if (idleTimerRef.current !== undefined) {
+      clearTimeout(idleTimerRef.current);
+    }
+    idleTimerRef.current = setTimeout(() => {
+      if (shouldBlockIdleHideRef.current) {
+        startIdleTimer();
+      } else {
+        setIsOverlayShown(false);
+      }
+    }, IDLE_TIMEOUT_MS);
+  };
+
+  // Start idle timer on mount, clean up on unmount.
+  useEffect(() => {
+    startIdleTimer();
+    return () => {
+      if (idleTimerRef.current !== undefined) {
+        clearTimeout(idleTimerRef.current);
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /**
    * Centralized handler for player control interactions. Manages cleanup of
@@ -218,15 +265,28 @@ export const PlayerControlOverlay: FC<IPlayerControlOverlayProps> = ({
     }
   };
 
-  /** Set isHovered state that renders the overlay. */
+  /** Shows the overlay and starts the idle timer on mouse enter. */
   const handleOnMouseEnterOverlay = () => {
     // console.log("hovered");
-    setIsHovered(true);
+    setIsOverlayShown(true);
+    startIdleTimer();
   };
 
-  /** Unset isHovered state that hides the overlay. */
+  /** Hides the overlay and clears the idle timer on mouse leave. */
   const handleOnMouseLeaveOverlay = () => {
-    setIsHovered(false);
+    setIsOverlayShown(false);
+    if (idleTimerRef.current !== undefined) {
+      clearTimeout(idleTimerRef.current);
+      idleTimerRef.current = undefined;
+    }
+  };
+
+  /** Shows the overlay (if hidden by idle) and resets the idle timer on mouse move. */
+  const handleOnMouseMoveOverlay = () => {
+    if (!isOverlayShown) {
+      setIsOverlayShown(true);
+    }
+    startIdleTimer();
   };
 
   /** Set progressBarHovered state. */
@@ -341,9 +401,10 @@ export const PlayerControlOverlay: FC<IPlayerControlOverlayProps> = ({
   return (
     <div
       css={playerControlOverlayContainerStyles}
-      data-is-hovered={isHovered}
+      data-is-overlay-shown={isOverlayShown}
       onMouseEnter={handleOnMouseEnterOverlay}
       onMouseLeave={handleOnMouseLeaveOverlay}
+      onMouseMove={handleOnMouseMoveOverlay}
     >
       <div css={topContainerStyles} onMouseDown={handleOnMouseDownOverlay} />
       <div css={bottomControlsContainerStyles}>
