@@ -163,7 +163,11 @@ Both are called from the render loop in `Player.tsx`.
 
 #### Player controls (`src/ui-components/level-two/player-control-overlay/PlayerControlOverlay.tsx`)
 
-Shows/hides on hover. Contains: progress bar with preview thumbnail, play/pause button, volume control, timestamp, settings button, and fullscreen button.
+Shows/hides on hover and auto-hides after 3 seconds of mouse inactivity. Contains: progress bar with preview thumbnail, play/pause button, volume control, timestamp, settings button, and fullscreen button.
+
+##### Idle auto-hide
+
+The overlay auto-hides (along with the mouse cursor) after 3 seconds of no mouse movement (`IDLE_TIMEOUT_MS`). `idleTimerRef` tracks the `setTimeout` handle. `startIdleTimer` clears any existing timer and starts a new one. When the timer fires, it checks `shouldBlockIdleHideRef` — if a menu is open (`isAudioTrackSelectorOpen`, `isSettingsOpen`) or the progress bar is hovered (`isProgressBarHovered`), it restarts the timer instead of hiding. `shouldBlockIdleHideRef` is synced to current state via a `useEffect` to avoid stale closures in the timer callback. The cursor is hidden via CSS: `cursor: none` on the container and all descendants when `data-is-overlay-shown` is not `true`, using higher specificity to override child cursor styles.
 
 ##### Interaction tracking
 

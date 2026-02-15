@@ -24,8 +24,17 @@ export const playerControlOverlayContainerStyles = (theme: Theme) =>
       theme.motion.playerControls.overlay.transitionTimingFunction
     }`,
     width: "100%",
-    "&[data-is-hovered=true]": {
+    "&[data-is-overlay-shown=true]": {
       opacity: 1,
+    },
+
+    // Hide cursor on the container when the overlay is not shown.
+    "&:not([data-is-overlay-shown=true])": {
+      cursor: "none",
+    },
+    // Hide cursor on all descendants too, overriding child cursor styles (e.g. cursor: pointer on buttons).
+    "&:not([data-is-overlay-shown=true]) *": {
+      cursor: "none",
     },
   });
 

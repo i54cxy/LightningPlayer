@@ -14,3 +14,5 @@ export enum PlayerControlElement {
   Timestamp = "Timestamp",
   VolumeControl = "VolumeControl",
 }
+/** Duration in milliseconds before the overlay auto-hides due to mouse inactivity. */
+export const IDLE_TIMEOUT_MS = 3000;
