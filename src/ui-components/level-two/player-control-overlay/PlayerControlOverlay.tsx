@@ -13,6 +13,7 @@ import { PlaybackSettings } from "../../base/playback-settings/PlaybackSettings"
 import { PreviewThumbnail } from "../../base/preview-thumbnail/PreviewThumbnail";
 import { previewThumbnailWidth } from "../../base/preview-thumbnail/PreviewThumbnail.styles";
 import { Tooltip } from "../../base/tooltip/Tooltip";
+import { Timestamp } from "../../base/timestamp/Timestamp";
 import { VolumeControl } from "../../level-one/volume-control/VolumeControl";
 import { getProgressFromEvent } from "./getProgressFromEvent";
 import { getProgressPercentageFromEvent } from "./getProgressPercentageFromEvent";
@@ -37,7 +38,11 @@ import {
   tooltipContainerStyles,
   topContainerStyles,
 } from "./PlayerControlOverlay.styles";
-import { PlayerControlElement } from "./PlayerControlOverlay.types";
+import {
+  PlayerControlElement,
+  progressBarCurrentId,
+  progressBarThumbId,
+} from "./PlayerControlOverlay.types";
 
 export interface IPlayerControlOverlayProps {
   /** The list of available audio tracks. */
@@ -146,7 +151,10 @@ export const PlayerControlOverlay: FC<IPlayerControlOverlayProps> = ({
     if (element !== PlayerControlElement.AudioTrackButton) {
       setIsAudioTrackSelectorOpen(false);
     }
-    if (element !== PlayerControlElement.VolumeControl) {
+    if (
+      element !== PlayerControlElement.Timestamp &&
+      element !== PlayerControlElement.VolumeControl
+    ) {
       setIsVCHardPinned(false);
     }
     if (element !== PlayerControlElement.SettingsButton) {
@@ -310,6 +318,11 @@ export const PlayerControlOverlay: FC<IPlayerControlOverlayProps> = ({
   const handleOnMouseEnterVolumeControl = () => {
     setIsVCSoftPinned(true);
   };
+  /** Called when the user clicks on the timestamp. */
+  const handleTimestampInteraction = () => {
+    handleInteraction(PlayerControlElement.Timestamp);
+  };
+
   const handleOnMouseLeaveLeftContainer = () => {
     setIsVCSoftPinned(false);
   };
@@ -367,8 +380,8 @@ export const PlayerControlOverlay: FC<IPlayerControlOverlayProps> = ({
               ]}
             />
           </div>
-          <div css={progressBarCurrentStyles} id="progress-bar-current"></div>
-          <div css={progressbarThumbStyles} id="progress-bar-thumb" />
+          <div css={progressBarCurrentStyles} id={progressBarCurrentId}></div>
+          <div css={progressbarThumbStyles} id={progressBarThumbId} />
         </div>
         {/* Button controls */}
         <div css={buttonControlsContainerStyles}>
@@ -385,6 +398,10 @@ export const PlayerControlOverlay: FC<IPlayerControlOverlayProps> = ({
               onVolumeChange={onVolumeChange}
               toolTipBoundsRef={progressBarContainerRef}
               volume={volume}
+            />
+            <Timestamp
+              duration={duration}
+              onInteraction={handleTimestampInteraction}
             />
           </div>
           <div css={centerContainerStyles}>

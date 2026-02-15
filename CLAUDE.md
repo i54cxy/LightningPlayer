@@ -88,6 +88,8 @@ UI components in `src/ui-components/`:
 
 - When creating enums, use values the same as the keys by default.
 
+- Avoid using `transform: scale()` on text elements as it causes blurring during the transition.
+
 #### Documentation
 
 - Always end comment sentences with a period.
@@ -134,7 +136,7 @@ Both audio and video playback rely on `PlaybackClock.currentTime` to achieve syn
 
 1. Gets current playback time from `PlaybackClock.currentTime`.
 2. If `nextFrameRef.current.timestamp <= playbackTime`, draws it and calls `updateNextFrame`.
-3. Updates the progress bar DOM imperatively via `updateProgressBarDOM`.
+3. Updates the progress bar and timestamp DOM imperatively via `updateProgressBarDOM` and `updateTimestampDOM`.
 
 #### Audio playback (`src/route-components/player/runAudioIterator.ts`)
 
@@ -150,21 +152,27 @@ Schedules audio buffers using Web Audio API:
 
 **Cleanup:** All nodes in `queuedAudioNodes` are stopped via `node.stop()`. `audioBufferIteratorRef.current?.return()` releases iterator. `audioContextRef.current?.suspend()` stops scheduled audio.
 
-#### Progress bar DOM updates (`src/route-components/player/updateProgressBarDOM.ts`)
+#### Imperative DOM updates
 
-Imperatively updates the progress bar elements by ID (`progress-bar-current`, `progress-bar-thumb`) to avoid React re-renders on every frame during playback.
+To avoid React re-renders on every frame during playback, certain UI elements are updated imperatively via `document.getElementById`. Element IDs are exported as consts from the component that renders them:
+
+- **Progress bar** (`updateProgressBarDOM.ts`): Updates fill width and thumb position. IDs (`progressBarCurrentId`, `progressBarThumbId`) are exported from `PlayerControlOverlay.types.ts`.
+- **Timestamp** (`updateTimestampDOM.ts`): Updates the timestamp text. ID (`timestampTextId`) is exported from `Timestamp.tsx`.
+
+Both are called from the render loop in `Player.tsx`.
 
 #### Player controls (`src/ui-components/level-two/player-control-overlay/PlayerControlOverlay.tsx`)
 
-Shows/hides on hover. Contains: progress bar with preview thumbnail, play/pause button, volume control, settings button, and fullscreen button.
+Shows/hides on hover. Contains: progress bar with preview thumbnail, play/pause button, volume control, timestamp, settings button, and fullscreen button.
 
 ##### Interaction tracking
 
-`PlayerControlElement` enum (`PlayerControlOverlay.types.ts`) lists all interactive elements: `FullscreenButton`, `Overlay`, `PlayButton`, `ProgressBar`, `SettingsButton`, `VolumeControl`.
+`PlayerControlElement` enum (`PlayerControlOverlay.types.ts`) lists all interactive elements: `AudioTrackButton`, `FullscreenButton`, `Overlay`, `PlayButton`, `ProgressBar`, `SettingsButton`, `Timestamp`, `VolumeControl`.
 
 `handleInteraction(element)` is a centralized handler that every control calls when interacted with. It manages cleanup of states that should reset when a different control is used:
 
-- If the interacted element is not `VolumeControl`, un-hard-pin volume control.
+- If the interacted element is not `AudioTrackButton`, close the audio track selector.
+- If the interacted element is not `VolumeControl` or `Timestamp`, un-hard-pin volume control.
 - If the interacted element is not `SettingsButton`, close the playback settings menu.
 
 `lastInteractedElementRef` tracks the last interacted element. When adding a new player control, add it to the `PlayerControlElement` enum and call `handleInteraction` with it. To add new cross-control cleanup logic, add a condition to `handleInteraction`.
@@ -180,6 +188,10 @@ Volume is stored as a 0-1 value in `volumeState` (`src/shared/atoms/volumeState.
 
 - the user hovers over it. This is "soft-pinned", and removed when the user moves outside of left container.
 - the user clicks on it. This is "hard-pinned", and removed when the user interacts with another player control.
+
+##### Timestamp (`src/ui-components/base/timestamp/Timestamp.tsx`)
+
+Displays current playback time (e.g. "49:24 / 58:27"). Placed to the right of VolumeControl in the left container. Clicking toggles between normal and reversed format (e.g. "-9:03 / 58:27") via a `data-reversed` attribute on the text element. Text content is updated imperatively by `updateTimestampDOM` — the toggle state is read from the DOM attribute. Clicking Timestamp does NOT unpin VolumeControl.
 
 ##### Progress bar (`src/ui-components/level-one/player-control-overlay/PlayerControlOverlay.tsx`)
 

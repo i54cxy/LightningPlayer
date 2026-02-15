@@ -1,3 +1,9 @@
+/** Progress bar current fill element ID for imperative DOM updates. */
+export const progressBarCurrentId = "progress-bar-current";
+
+/** Progress bar thumb element ID for imperative DOM updates. */
+export const progressBarThumbId = "progress-bar-thumb";
+
 export enum PlayerControlElement {
   AudioTrackButton = "AudioTrackButton",
   FullscreenButton = "FullscreenButton",
@@ -5,5 +11,6 @@ export enum PlayerControlElement {
   PlayButton = "PlayButton",
   ProgressBar = "ProgressBar",
   SettingsButton = "SettingsButton",
+  Timestamp = "Timestamp",
   VolumeControl = "VolumeControl",
 }
