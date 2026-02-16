@@ -20,6 +20,7 @@ import { volumeState } from "../../shared/atoms/player-controls/volumeState";
 import { titleBarTextState } from "../../shared/atoms/titleBarTextState";
 import { useDimensions } from "../../shared/hooks/useDimensions";
 import { IDimensions } from "../../shared/types/dimensions";
+import { isTruthy } from "../../shared/utils/isTruthy";
 import { FullscreenContainer } from "../../ui-components/base/fullscreen-container/FullscreenContainer";
 import { PlayerControlOverlay } from "../../ui-components/level-two/player-control-overlay/PlayerControlOverlay";
 import { draw } from "./draw";
@@ -69,6 +70,9 @@ export const Player: FC = () => {
   // When duration is set, it also means that a file has finished loading.
   const [duration, setDuration] = useState<number | undefined>(undefined);
 
+  // Whether the current file has video tracks.
+  const [hasVideo, setHasVideo] = useState(false);
+
   // progressRef and the progress bar element are not updated until dragging ends.
   const isDraggingProgressBarRef = useRef<boolean>(false);
 
@@ -114,6 +118,8 @@ export const Player: FC = () => {
     // Dispose iterators.
     audioBufferIteratorRef.current?.return();
     videoFrameIteratorRef.current?.return();
+    // Dispose thumbnail cache.
+    thumbnailCacheRef.current?.dispose();
     // Clear the canvas.
     if (canvasRef.current) {
       const ctx = canvasRef.current?.getContext("2d");
@@ -121,7 +127,7 @@ export const Player: FC = () => {
     }
   };
 
-  const play = async () => {
+  const playImpl = async () => {
     if (!playbackClockRef.current) {
       console.error("play: playbackClock not initialized.");
       return;
@@ -152,7 +158,7 @@ export const Player: FC = () => {
     }
   };
 
-  const pause = () => {
+  const pauseImpl = () => {
     if (!playbackClockRef.current) {
       console.error("pause: playbackClock not initialized.");
       return;
@@ -170,31 +176,10 @@ export const Player: FC = () => {
     audioBufferIteratorRef.current?.return();
   };
 
-  const seek = useCallback(
+  const seekImpl = useCallback(
     async (time: number) => {
       if (!playbackClockRef.current) {
         console.error("seek: playbackClock not initialized.");
-        return;
-      }
-
-      if (!canvasRef.current) {
-        console.error("seek: canvas not ready.");
-        return;
-      }
-
-      const ctx = canvasRef.current.getContext("2d");
-      if (!ctx) {
-        console.error("seek: no canvas context.");
-        return;
-      }
-
-      if (!screenDimensionsRef.current) {
-        console.error("seek: screen dimensions not ready.");
-        return;
-      }
-
-      if (!currentVideoSink) {
-        console.error("seek: videoSink not ready.");
         return;
       }
 
@@ -203,23 +188,43 @@ export const Player: FC = () => {
         return;
       }
 
+      // Always update clock and progress bar.
       progressRef.current = time;
       updateProgressBarDOM({ duration, progress: time });
-
       playbackClockRef.current.seek(time);
-      thumbnailCacheRef.current?.startAutoFill(time);
-      await startVideoIterator({
-        asyncIdRef,
-        ctx,
-        flipHorizontal,
-        flipVertical,
-        nextFrameRef,
-        playbackClock: playbackClockRef.current,
-        rotation,
-        screenDimensions: screenDimensionsRef.current,
-        videoFrameIteratorRef,
-        videoSink: currentVideoSink,
-      });
+      // thumbnailCacheRef.current?.startAutoFill(time);
+
+      // Draw frame at new position only if video is present.
+      if (currentVideoSink) {
+        if (!canvasRef.current) {
+          console.error("seek: canvas not ready.");
+          return;
+        }
+
+        const ctx = canvasRef.current.getContext("2d");
+        if (!ctx) {
+          console.error("seek: no canvas context.");
+          return;
+        }
+
+        if (!screenDimensionsRef.current) {
+          console.error("seek: screen dimensions not ready.");
+          return;
+        }
+
+        await startVideoIterator({
+          asyncIdRef,
+          ctx,
+          flipHorizontal,
+          flipVertical,
+          nextFrameRef,
+          playbackClock: playbackClockRef.current,
+          rotation,
+          screenDimensions: screenDimensionsRef.current,
+          videoFrameIteratorRef,
+          videoSink: currentVideoSink,
+        });
+      }
     },
     [currentVideoSink, duration, flipHorizontal, flipVertical, rotation],
   );
@@ -255,12 +260,12 @@ export const Player: FC = () => {
           canvasRef.current.height = screenDimensions.height;
           // Redraw immediately if paused.
           if (!playbackClockRef.current.isPlaying) {
-            seek(playbackClockRef.current.currentTime);
+            seekImpl(playbackClockRef.current.currentTime);
           }
         }
       }
     }
-  }, [screenDimensions, seek]);
+  }, [screenDimensions, seekImpl]);
 
   // Sync transform refs and redraw when flip/rotation changes while paused.
   useEffect(() => {
@@ -268,9 +273,9 @@ export const Player: FC = () => {
     flipVerticalRef.current = flipVertical;
     rotationRef.current = rotation;
     if (playbackClockRef.current && !playbackClockRef.current.isPlaying) {
-      seek(playbackClockRef.current.currentTime);
+      seekImpl(playbackClockRef.current.currentTime);
     }
-  }, [flipHorizontal, flipVertical, rotation, seek]);
+  }, [flipHorizontal, flipVertical, rotation, seekImpl]);
 
   // Load files.
   useEffect(() => {
@@ -280,7 +285,14 @@ export const Player: FC = () => {
 
     const loadFile = async () => {
       if (!currentPlayingFile) {
-        console.error("loadFile: no file provided to Player.");
+        // No file (e.g., after Ctrl+R reload). Clean up and reset state.
+        cleanupPlayback();
+        thumbnailCacheRef.current = undefined;
+        setCurrentAudioSink(undefined);
+        setCurrentVideoSink(undefined);
+        setDuration(undefined);
+        setHasVideo(false);
+        setIsPlaying(false);
         return;
       }
 
@@ -305,29 +317,59 @@ export const Player: FC = () => {
         source: new BlobSource(currentPlayingFile),
       });
 
-      const videoTracks = await input.getVideoTracks();
-      const videoSink = new CanvasSink(videoTracks[0], {
-        fit: "contain", // In case the video changes dimensions over time
-        poolSize: 2,
-      });
-      // Separate video sink for thumbnails to avoid canvas pool conflicts.
-      const thumbnailVideoSink = new CanvasSink(videoTracks[0], {
-        fit: "contain",
-      });
-      const duration = await videoTracks[0].computeDuration();
+      const allTracks = await input.getTracks();
+      console.log("allTracks:", allTracks);
 
-      const loadedAudioTracks = await input.getAudioTracks();
-      const currentAudioTrack = loadedAudioTracks[0];
+      // Filter to decodable tracks only.
+      const decodableTracks = (
+        await Promise.all(
+          allTracks.map(async (track) =>
+            (await track.canDecode()) ? track : undefined,
+          ),
+        )
+      ).filter(isTruthy);
+
+      const audioTracks = decodableTracks.filter((track) =>
+        track.isAudioTrack(),
+      );
+      const videoTracks = decodableTracks.filter((track) =>
+        track.isVideoTrack(),
+      );
+
+      if (!audioTracks[0] && !videoTracks[0]) {
+        throw new Error("loadFile: no decodable video or audio tracks found.");
+      }
+
+      // New file has valid tracks. Clean up old playback before setting up new state.
+      cleanupPlayback();
+
+      let videoSink: CanvasSink | undefined;
+      let thumbnailVideoSink: CanvasSink | undefined;
+
+      if (videoTracks[0]) {
+        videoSink = new CanvasSink(videoTracks[0], {
+          fit: "contain", // In case the video changes dimensions over time.
+          poolSize: 2,
+        });
+        // Separate video sink for thumbnails to avoid canvas pool conflicts.
+        thumbnailVideoSink = new CanvasSink(videoTracks[0], {
+          fit: "contain",
+        });
+      }
+
+      // Get duration from video track if available, otherwise from audio track.
+      const durationTrack = videoTracks[0] ? videoTracks[0] : audioTracks[0];
+      const duration = await durationTrack!.computeDuration();
 
       // Always create audio infrastructure even if there isn't an audio track.
       const audioContext: AudioContext = new AudioContext({
-        sampleRate: currentAudioTrack?.sampleRate,
+        sampleRate: audioTracks[0]?.sampleRate,
       });
       console.log(`audioContext's baseLatency: ${audioContext.baseLatency}`);
 
       let audioSink: AudioBufferSink | undefined;
-      if (currentAudioTrack) {
-        audioSink = new AudioBufferSink(currentAudioTrack);
+      if (audioTracks[0]) {
+        audioSink = new AudioBufferSink(audioTracks[0]);
       }
 
       if (!cancelled) {
@@ -344,20 +386,23 @@ export const Player: FC = () => {
         const playbackClock = new PlaybackClock(audioContext);
         playbackClockRef.current = playbackClock;
 
-        // Dispose previous thumbnail cache if exists.
-        thumbnailCacheRef.current?.dispose();
-        // Initialize thumbnail cache and start auto-fill.
-        const thumbnailCache = new PreviewThumbnailCache({
-          duration,
-          videoSink: thumbnailVideoSink,
-        });
-        thumbnailCacheRef.current = thumbnailCache;
-        thumbnailCache.startAutoFill();
+        // Initialize thumbnail cache only if we have video.
+        if (thumbnailVideoSink) {
+          const thumbnailCache = new PreviewThumbnailCache({
+            duration,
+            videoSink: thumbnailVideoSink,
+          });
+          thumbnailCacheRef.current = thumbnailCache;
+          // thumbnailCache.startAutoFill();
+        } else {
+          thumbnailCacheRef.current = undefined;
+        }
 
-        setAudioTracks(loadedAudioTracks);
+        setAudioTracks(audioTracks);
         setCurrentAudioSink(audioSink);
         setCurrentVideoSink(videoSink);
         setDuration(duration);
+        setHasVideo(!!videoTracks[0]);
         setSelectedAudioTrackIndex(0);
 
         // Reset playback settings when loading a new file.
@@ -367,32 +412,28 @@ export const Player: FC = () => {
         setPlaybackSpeed(1);
         setRotation(0);
 
-        // Render first frame.
-        await startVideoIterator({
-          asyncIdRef,
-          ctx,
-          flipHorizontal: flipHorizontalRef.current,
-          flipVertical: flipVerticalRef.current,
-          nextFrameRef,
-          playbackClock,
-          rotation: rotationRef.current,
-          screenDimensions: screenDimensionsRef.current,
-          videoFrameIteratorRef,
-          videoSink,
-        });
+        // Render first frame only if video is present.
+        if (videoSink) {
+          await startVideoIterator({
+            asyncIdRef,
+            ctx,
+            flipHorizontal: flipHorizontalRef.current,
+            flipVertical: flipVerticalRef.current,
+            nextFrameRef,
+            playbackClock,
+            rotation: rotationRef.current,
+            screenDimensions: screenDimensionsRef.current,
+            videoFrameIteratorRef,
+            videoSink,
+          });
+        }
       }
     };
 
-    try {
-      loadFile();
-    } catch (error) {
-      console.error(error);
-    }
+    loadFile().catch(console.error);
 
     return () => {
       cancelled = true;
-      cleanupPlayback();
-      thumbnailCacheRef.current?.dispose();
     };
   }, [
     currentPlayingFile,
@@ -437,7 +478,7 @@ export const Player: FC = () => {
 
         if (playbackTime >= duration) {
           // Pause playback once the end is reached.
-          pause();
+          pauseImpl();
           playbackClockRef.current.seek(duration);
         }
 
@@ -512,8 +553,7 @@ export const Player: FC = () => {
   useEffect(() => {
     return () => {
       cleanupPlayback();
-      // Suspend audio context to stop scheduled audio.
-      playbackClockRef.current?.audioContext.suspend();
+      audioContextRef.current?.close();
     };
   }, []);
 
@@ -592,7 +632,7 @@ export const Player: FC = () => {
 
     // Stop current audio playback.
     if (isPlaying) {
-      pause();
+      pauseImpl();
     }
 
     // Close old audio context.
@@ -612,9 +652,21 @@ export const Player: FC = () => {
     // false positive immutability error.
     audioContextRef.current = audioContext;
 
+    // Recompute duration for audio-only files since different audio tracks
+    // may have different durations.
+    let seekTime = currentTime;
+    if (!hasVideo) {
+      const newDuration = await newTrack.computeDuration();
+      setDuration(newDuration);
+      // Clamp position if new track is shorter.
+      if (seekTime > newDuration) {
+        seekTime = newDuration;
+      }
+    }
+
     const playbackClock = new PlaybackClock(audioContext);
     playbackClock.speed = playbackSpeedRef.current;
-    playbackClock.seek(currentTime);
+    playbackClock.seek(seekTime);
     playbackClockRef.current = playbackClock;
 
     const audioSink = new AudioBufferSink(newTrack);
@@ -629,7 +681,7 @@ export const Player: FC = () => {
       playbackClock.play();
 
       void audioBufferIteratorRef.current?.return();
-      audioBufferIteratorRef.current = audioSink.buffers(currentTime);
+      audioBufferIteratorRef.current = audioSink.buffers(seekTime);
       runAudioIterator({
         audioBufferIterator: audioBufferIteratorRef.current,
         gainNode,
@@ -662,30 +714,29 @@ export const Player: FC = () => {
     [],
   );
 
-  if (!currentPlayingFile) {
-    return null;
-  }
-
   return (
     <FullscreenContainer ref={fullscreenContainerRef}>
-      <PlayerControlOverlay
-        audioTracks={audioTracks}
-        duration={duration ?? 0}
-        fullscreenContainerRef={fullscreenContainerRef}
-        getThumbnail={getThumbnailCallback}
-        isDraggingProgressBarRef={isDraggingProgressBarRef}
-        isMuted={isMuted}
-        isPlaying={isPlaying}
-        onMuteToggle={handleMuteToggle}
-        onSelectAudioTrack={handleSelectAudioTrack}
-        onVolumeChange={handleVolumeChange}
-        pause={pause}
-        play={play}
-        progressRef={progressRef}
-        seek={seek}
-        selectedAudioTrackIndex={selectedAudioTrackIndex}
-        volume={volume}
-      />
+      {currentPlayingFile && (
+        <PlayerControlOverlay
+          audioTracks={audioTracks}
+          duration={duration ?? 0}
+          fullscreenContainerRef={fullscreenContainerRef}
+          getThumbnail={getThumbnailCallback}
+          hasVideo={hasVideo}
+          isDraggingProgressBarRef={isDraggingProgressBarRef}
+          isMuted={isMuted}
+          isPlaying={isPlaying}
+          onMuteToggle={handleMuteToggle}
+          onSelectAudioTrack={handleSelectAudioTrack}
+          onVolumeChange={handleVolumeChange}
+          pause={pauseImpl}
+          play={playImpl}
+          progressRef={progressRef}
+          seek={seekImpl}
+          selectedAudioTrackIndex={selectedAudioTrackIndex}
+          volume={volume}
+        />
+      )}
 
       <canvas ref={canvasRef} />
     </FullscreenContainer>

@@ -108,13 +108,16 @@ Provides Emotion ThemeProvider, global styles, and Tauri-specific components (Ti
 
 #### Summary
 
-Uses mediabunny for video decoding and Web Audio API for audio playback:
+Supports both video and audio-only playback using mediabunny for decoding and Web Audio API for audio:
 
 1. Creates `Input` from file blob with `BlobSource`.
-2. Gets video/audio tracks via `getVideoTracks()` / `getAudioTracks()`.
-3. Creates `CanvasSink` for video frames and `AudioBufferSink` for audio buffers.
-4. Audio: Schedules `AudioBufferSourceNode` instances via `runAudioIterator`.
-5. Video: Renders frames to canvas via `requestAnimationFrame` loop.
+2. Gets all tracks via `getTracks()`, filters by `canDecode()`, then separates into video and audio tracks.
+3. If no decodable tracks exist, throws an error (current playback is preserved).
+4. Creates `CanvasSink` for video frames (only when video tracks exist) and `AudioBufferSink` for audio buffers.
+5. Audio: Schedules `AudioBufferSourceNode` instances via `runAudioIterator`.
+6. Video: Renders frames to canvas via `requestAnimationFrame` loop.
+
+A `hasVideo` state tracks whether the current file has video tracks. When `false`: `CanvasSink`, thumbnail cache, and `startVideoIterator` are skipped; `seekImpl` updates only the clock and progress bar; duration is computed from the selected audio track (and recomputed on audio track switch); preview thumbnails and flip/rotate settings are hidden in the UI.
 
 #### PlaybackClock (`src/route-components/player/PlaybackClock.ts`)
 
@@ -150,7 +153,7 @@ Schedules audio buffers using Web Audio API:
 4. Throttles when >1 second buffered ahead.
 5. Tracks scheduled nodes in `queuedAudioNodes` Set (added after `start()`, removed on `ended`).
 
-**Cleanup:** All nodes in `queuedAudioNodes` are stopped via `node.stop()`. `audioBufferIteratorRef.current?.return()` releases iterator. `audioContextRef.current?.suspend()` stops scheduled audio.
+**Cleanup (`cleanupPlayback`):** Pauses the clock, clears `nextFrameRef`, stops all nodes in `queuedAudioNodes` via `node.stop()`, releases audio and video iterators via `.return()`, disposes the thumbnail cache, and clears the canvas.
 
 #### Imperative DOM updates
 

@@ -13,6 +13,8 @@ import { PlaybackSettingsSpeedMenu } from "./PlaybackSettingsSpeedMenu";
 export interface IPlaybackSettingsProps {
   /** Style override for the outmost container. */
   className?: string;
+  /** Whether the current file has video tracks. Controls flip/rotate menu visibility. */
+  hasVideo: boolean;
 }
 
 /**
@@ -21,7 +23,10 @@ export interface IPlaybackSettingsProps {
  *
  * @returns The playback settings component.
  */
-export const PlaybackSettings: FC<IPlaybackSettingsProps> = ({ className }) => {
+export const PlaybackSettings: FC<IPlaybackSettingsProps> = ({
+  className,
+  hasVideo,
+}) => {
   const [currentMenu, setCurrentMenu] = useState(PlaybackSettingsMenu.Main);
 
   const handleFlipOnBack = () => setCurrentMenu(PlaybackSettingsMenu.Main);
@@ -41,18 +46,22 @@ export const PlaybackSettings: FC<IPlaybackSettingsProps> = ({ className }) => {
     <div className={className} css={playbackSettingsContainerStyles}>
       {currentMenu === PlaybackSettingsMenu.Main && (
         <>
-          <PlaybackSettingsChip
-            icon={<FlipHorizontalIcon />}
-            onClick={handleOnFlipClick}
-            rightIcon={<ChevronRightIcon />}
-            text="Flip"
-          />
-          <PlaybackSettingsChip
-            icon={<RotateClockwiseIcon />}
-            onClick={handleOnRotationClick}
-            rightIcon={<ChevronRightIcon />}
-            text="Rotate"
-          />
+          {hasVideo && (
+            <PlaybackSettingsChip
+              icon={<FlipHorizontalIcon />}
+              onClick={handleOnFlipClick}
+              rightIcon={<ChevronRightIcon />}
+              text="Flip"
+            />
+          )}
+          {hasVideo && (
+            <PlaybackSettingsChip
+              icon={<RotateClockwiseIcon />}
+              onClick={handleOnRotationClick}
+              rightIcon={<ChevronRightIcon />}
+              text="Rotate"
+            />
+          )}
           <PlaybackSettingsChip
             icon={<SpeedometerIcon />}
             onClick={handleOnSpeedClick}

@@ -241,11 +241,14 @@ export const playbackSettingsPositionStyles = css({
 
 export const bottomControlsButtonStyles = (theme: Theme) =>
   css({
+    alignItems: "center",
     background: theme.colors.playerControls.button.background,
     border: "none",
     borderRadius: theme.colors.playerControls.button.borderRadius,
     cursor: "pointer",
+    display: "flex",
     height: playerControlButtonContainerHeight,
+    justifyContent: "center",
     padding: 0,
     width: playerControlButtonContainerHeight,
 

@@ -19,3 +19,6 @@ export const IDLE_TIMEOUT_MS = 3000;
 
 export const playerControlButtonContainerHeight = 40;
 export const playerControlButtonContainerMarginTop = 8;
+
+// Development only: for debugging purposes.
+export const ALWAYS_SHOW_OVERLAY: boolean = true;

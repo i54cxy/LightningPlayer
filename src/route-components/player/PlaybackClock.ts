@@ -60,9 +60,9 @@ export class PlaybackClock {
   pause(): void {
     if (!this._isPlaying) return;
     this.timestampAtPlayStart = this.currentTime;
-    console.log(
-      `PlaybackClock.pause: timestampAtPlayStart set to ${this.timestampAtPlayStart}`,
-    );
+    // console.log(
+    //   `PlaybackClock.pause: timestampAtPlayStart set to ${this.timestampAtPlayStart}`,
+    // );
     this._isPlaying = false;
   }
 

@@ -67,7 +67,7 @@ export const thumbnailStyles = (theme: Theme) =>
     borderRadius,
     display: "block",
     height: previewThumbnailHeight,
-    objectFit: "cover",
+    objectFit: "contain",
     width: previewThumbnailWidth,
   });
 
