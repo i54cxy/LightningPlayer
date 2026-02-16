@@ -12,6 +12,8 @@ declare module "@emotion/react" {
       };
       playerControls: {
         button: {
+          background: string;
+          borderRadius: string;
           color: string;
           foreground: string;
         };
@@ -37,9 +39,9 @@ declare module "@emotion/react" {
           color: string;
         };
         volumeControl: {
-          background: string;
           fill: string;
           thumb: string;
+          track: string;
         };
       };
       root: {

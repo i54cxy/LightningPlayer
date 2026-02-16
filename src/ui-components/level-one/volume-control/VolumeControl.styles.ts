@@ -1,4 +1,5 @@
 import { css, Theme } from "@emotion/react";
+import { playerControlButtonContainerHeight } from "../../level-two/player-control-overlay/PlayerControlOverlay.types";
 
 const collapsedWidth = 24;
 const iconSliderGap = 4;
@@ -10,6 +11,10 @@ const expandedWidth = collapsedWidth + iconSliderGap + sliderWidth;
 export const containerStyles = (theme: Theme) =>
   css({
     alignItems: "center",
+    background: theme.colors.playerControls.button.background,
+    borderRadius: theme.colors.playerControls.button.borderRadius,
+    paddingLeft: (playerControlButtonContainerHeight - collapsedWidth) / 2,
+    paddingRight: (playerControlButtonContainerHeight - collapsedWidth) / 2,
     display: "flex",
     gap: iconSliderGap,
     height: "100%",
@@ -80,7 +85,7 @@ export const sliderContainerStyles = (theme: Theme) =>
 
 export const trackStyles = (theme: Theme) =>
   css({
-    backgroundColor: theme.colors.playerControls.volumeControl.background,
+    backgroundColor: theme.colors.playerControls.volumeControl.track,
     borderRadius: sliderHeight / 2,
     height: sliderHeight,
     position: "absolute",

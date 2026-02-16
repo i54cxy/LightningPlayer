@@ -3,6 +3,7 @@ import {
   FC,
   MouseEventHandler,
   RefObject,
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -46,6 +47,7 @@ import {
   topContainerStyles,
 } from "./PlayerControlOverlay.styles";
 import {
+  ALWAYS_SHOW_OVERLAY,
   IDLE_TIMEOUT_MS,
   PlayerControlElement,
   progressBarCurrentId,
@@ -69,6 +71,12 @@ export interface IPlayerControlOverlayProps {
    * @param timestamp in seconds.
    */
   getThumbnail: (timestamp: number) => Promise<string | undefined>;
+  /**
+   * Whether the current file has video tracks.
+   * When there are no videos, there are no PreviewThumbnails, and
+   * the flip & rotate options in PlaybackSettings are hidden.
+   */
+  hasVideo: boolean;
   /**
    * A ref to keep track of progress bar's drag state that doesn't trigger rerenders.
    * progressRef and the progress bar element are not updated until dragging ends.
@@ -110,6 +118,7 @@ export const PlayerControlOverlay: FC<IPlayerControlOverlayProps> = ({
   duration,
   fullscreenContainerRef,
   getThumbnail,
+  hasVideo,
   isDraggingProgressBarRef,
   isMuted,
   isPlaying,
@@ -164,18 +173,23 @@ export const PlayerControlOverlay: FC<IPlayerControlOverlayProps> = ({
    * Starts (or restarts) the idle timer. When the timer expires and no
    * blocking condition is active, the overlay will be hidden.
    */
-  const startIdleTimer = () => {
+  const startIdleTimer = useCallback(() => {
     if (idleTimerRef.current !== undefined) {
       clearTimeout(idleTimerRef.current);
     }
-    idleTimerRef.current = setTimeout(() => {
-      if (shouldBlockIdleHideRef.current) {
-        startIdleTimer();
-      } else {
-        setIsOverlayShown(false);
-      }
-    }, IDLE_TIMEOUT_MS);
-  };
+    const startIdleTimerImpl = () => {
+      idleTimerRef.current = setTimeout(() => {
+        if (shouldBlockIdleHideRef.current) {
+          startIdleTimerImpl();
+        } else {
+          if (!ALWAYS_SHOW_OVERLAY) {
+            setIsOverlayShown(false);
+          }
+        }
+      }, IDLE_TIMEOUT_MS);
+    };
+    startIdleTimerImpl();
+  }, []);
 
   // Start idle timer on mount, clean up on unmount.
   useEffect(() => {
@@ -185,8 +199,7 @@ export const PlayerControlOverlay: FC<IPlayerControlOverlayProps> = ({
         clearTimeout(idleTimerRef.current);
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [startIdleTimer]);
 
   /**
    * Centralized handler for player control interactions. Manages cleanup of
@@ -274,7 +287,9 @@ export const PlayerControlOverlay: FC<IPlayerControlOverlayProps> = ({
 
   /** Hides the overlay and clears the idle timer on mouse leave. */
   const handleOnMouseLeaveOverlay = () => {
-    setIsOverlayShown(false);
+    if (!ALWAYS_SHOW_OVERLAY) {
+      setIsOverlayShown(false);
+    }
     if (idleTimerRef.current !== undefined) {
       clearTimeout(idleTimerRef.current);
       idleTimerRef.current = undefined;
@@ -418,18 +433,20 @@ export const PlayerControlOverlay: FC<IPlayerControlOverlayProps> = ({
           onMouseLeave={handleOnMouseLeaveProgressBar}
           ref={progressBarContainerRef}
         >
-          {/* Preview thumbnail */}
-          <div
-            css={[
-              previewThumbnailContainerStyles,
-              { left: previewThumbnailLeft },
-            ]}
-          >
-            <PreviewThumbnail
-              getThumbnail={getThumbnail}
-              timestamp={(hoverPercentage ?? 0) * duration}
-            />
-          </div>
+          {/* Preview thumbnail - only for files with video. */}
+          {hasVideo && (
+            <div
+              css={[
+                previewThumbnailContainerStyles,
+                { left: previewThumbnailLeft },
+              ]}
+            >
+              <PreviewThumbnail
+                getThumbnail={getThumbnail}
+                timestamp={(hoverPercentage ?? 0) * duration}
+              />
+            </div>
+          )}
           {/* Main progress bar */}
           <div css={progressBarTrackStyles}>
             <div
@@ -537,7 +554,10 @@ export const PlayerControlOverlay: FC<IPlayerControlOverlayProps> = ({
                 <SettingsIcon />
               </button>
               {isSettingsOpen && (
-                <PlaybackSettings css={playbackSettingsPositionStyles} />
+                <PlaybackSettings
+                  css={playbackSettingsPositionStyles}
+                  hasVideo={hasVideo}
+                />
               )}
             </Tooltip>
           </div>

@@ -3,6 +3,10 @@ import {
   tooltipDefaultHeight,
   tooltipDefaultMarginTop,
 } from "../../base/tooltip/Tooltip.styles";
+import {
+  playerControlButtonContainerHeight,
+  playerControlButtonContainerMarginTop,
+} from "./PlayerControlOverlay.types";
 
 const progressBarTrackHeight = 3;
 const progressBarTrackExpandedHeight = 5;
@@ -127,16 +131,12 @@ export const progressBarTrackFillStyles = (theme: Theme) =>
     },
   });
 
-// Height matches the play button (fontSize 36) for consistent tooltip positioning.
-const buttonContainerHeight = 36;
-const buttonContainerMarginTop = 8;
-
 export const buttonControlsContainerStyles = css({
   alignItems: "center",
   display: "grid",
   gridTemplateColumns: "1fr auto 1fr",
   marginBottom: 12,
-  marginTop: buttonContainerMarginTop,
+  marginTop: playerControlButtonContainerMarginTop,
   width: "100%",
 });
 
@@ -151,7 +151,7 @@ const buttonContainerStyles: CSSObject = {
   columnGap: 8,
   display: "flex",
   flexDirection: "row",
-  height: buttonContainerHeight,
+  height: playerControlButtonContainerHeight,
   position: "relative",
 };
 
@@ -171,25 +171,15 @@ export const rightContainerStyles = css({
   width: "100%",
 });
 
-export const playButtonStyles = (theme: Theme) =>
+export const playButtonStyles = (theme: Theme) => [
+  bottomControlsButtonStyles(theme),
   css({
-    background: "transparent",
-    border: "none",
-    color: theme.colors.playerControls.button.color,
-    cursor: "pointer",
-    fontSize: 36,
-    lineHeight: 0,
-    padding: 0,
-    transitionDuration: theme.motion.playerControls.button.transitionDuration,
-    transitionProperty: "color, transform",
-    transitionTimingFunction:
-      theme.motion.playerControls.button.transitionTimingFunction,
-
-    "&:hover": {
-      color: theme.colors.playerControls.button.foreground,
-      transform: `scale(${theme.motion.playerControls.button.foregroundScale})`,
+    svg: {
+      height: 30,
+      width: 30,
     },
-  });
+  }),
+];
 
 // Distance between tooltips and the progress bar.
 const tooltipMarginBottom = 6;
@@ -220,7 +210,7 @@ export const playerControlTooltipStyles = (theme: Theme) =>
     bottom: "100%",
     color: theme.colors.playerControls.tooltip.color,
     marginBottom:
-      buttonContainerMarginTop +
+      playerControlButtonContainerMarginTop +
       progressBarContainerHeight +
       tooltipMarginBottom,
     marginTop: 0,
@@ -231,7 +221,9 @@ export const playerControlTooltipStyles = (theme: Theme) =>
 export const audioTrackSelectorPositionStyles = css({
   bottom: "100%",
   marginBottom:
-    buttonContainerMarginTop + progressBarContainerHeight + tooltipMarginBottom,
+    playerControlButtonContainerMarginTop +
+    progressBarContainerHeight +
+    tooltipMarginBottom,
   position: "absolute",
   right: 0,
 });
@@ -240,30 +232,40 @@ export const audioTrackSelectorPositionStyles = css({
 export const playbackSettingsPositionStyles = css({
   bottom: "100%",
   marginBottom:
-    buttonContainerMarginTop + progressBarContainerHeight + tooltipMarginBottom,
+    playerControlButtonContainerMarginTop +
+    progressBarContainerHeight +
+    tooltipMarginBottom,
   position: "absolute",
   right: 0,
 });
 
 export const bottomControlsButtonStyles = (theme: Theme) =>
   css({
-    background: "transparent",
+    alignItems: "center",
+    background: theme.colors.playerControls.button.background,
     border: "none",
-    color: theme.colors.playerControls.button.color,
+    borderRadius: theme.colors.playerControls.button.borderRadius,
     cursor: "pointer",
+    display: "flex",
+    height: playerControlButtonContainerHeight,
+    justifyContent: "center",
     padding: 0,
-    transitionDuration: theme.motion.playerControls.button.transitionDuration,
-    transitionProperty: "color, transform",
-    transitionTimingFunction:
-      theme.motion.playerControls.button.transitionTimingFunction,
+    width: playerControlButtonContainerHeight,
 
     svg: {
+      color: theme.colors.playerControls.button.color,
       height: 24,
       width: 24,
+      transitionDuration: theme.motion.playerControls.button.transitionDuration,
+      transitionProperty: "color, transform",
+      transitionTimingFunction:
+        theme.motion.playerControls.button.transitionTimingFunction,
     },
 
     "&:hover": {
-      color: theme.colors.playerControls.button.foreground,
-      transform: `scale(${theme.motion.playerControls.button.foregroundScale})`,
+      svg: {
+        color: theme.colors.playerControls.button.foreground,
+        transform: `scale(${theme.motion.playerControls.button.foregroundScale})`,
+      },
     },
   });

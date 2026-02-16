@@ -9,6 +9,8 @@
     },
     "playerControls": {
       "button": {
+        "background": "rgba(28, 28, 28, 0.9)",
+        "borderRadius": "12px",
         "color": "rgba(255, 255, 255, 0.9)",
         "foreground": "rgb(255, 255, 255)"
       },
@@ -34,9 +36,9 @@
         "color": "rgb(255, 255, 255)"
       },
       "volumeControl": {
-        "background": "rgba(255, 255, 255, 0.25)",
         "fill": "rgb(255, 255, 255)",
-        "thumb": "rgb(255, 255, 255)"
+        "thumb": "rgb(255, 255, 255)",
+        "track": "rgba(255, 255, 255, 0.25)"
       }
     },
     "root": {

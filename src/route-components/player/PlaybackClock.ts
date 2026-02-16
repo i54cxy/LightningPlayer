@@ -13,6 +13,8 @@ export class PlaybackClock {
   public audioContext: AudioContext;
   /** The AudioContext.currentTime when play() was called. */
   public audioContextTimeAtPlayStart: number | undefined;
+  /** The playback speed multiplier. 1 means normal speed. */
+  public speed: number = 1;
   /** The video timestamp we're measuring from. */
   public timestampAtPlayStart: number = 0;
   private _isPlaying: boolean = false;
@@ -38,7 +40,7 @@ export class PlaybackClock {
       }
       const elapsed =
         this.audioContext.currentTime - this.audioContextTimeAtPlayStart;
-      return this.timestampAtPlayStart + elapsed;
+      return this.timestampAtPlayStart + elapsed * this.speed;
     }
     return this.timestampAtPlayStart;
   }
@@ -58,10 +60,25 @@ export class PlaybackClock {
   pause(): void {
     if (!this._isPlaying) return;
     this.timestampAtPlayStart = this.currentTime;
-    console.log(
-      `PlaybackClock.pause: timestampAtPlayStart set to ${this.timestampAtPlayStart}`,
-    );
+    // console.log(
+    //   `PlaybackClock.pause: timestampAtPlayStart set to ${this.timestampAtPlayStart}`,
+    // );
     this._isPlaying = false;
+  }
+
+  /**
+   * Updates the playback speed. If currently playing, re-anchors the clock
+   * so that currentTime remains continuous across the speed change.
+   *
+   * @param speed - The new playback speed multiplier.
+   */
+  setSpeed(speed: number): void {
+    if (this._isPlaying) {
+      // Re-anchor: save current position, then reset the time origin.
+      this.timestampAtPlayStart = this.currentTime;
+      this.audioContextTimeAtPlayStart = this.audioContext.currentTime;
+    }
+    this.speed = speed;
   }
 
   /**

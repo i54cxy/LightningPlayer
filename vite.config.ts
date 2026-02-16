@@ -18,6 +18,9 @@ const ReactCompilerConfig = {
         case "CompileError": {
           console.log(`❌ Skipped: ${filename}`);
           console.error(`❌ Compilation failed: ${filename}`);
+          console.error(
+            `Full detail: ${JSON.stringify(event.detail, null, 2)}`,
+          );
           console.error(`Reason: ${event.detail.reason}`);
 
           if (event.detail.description) {
