@@ -11,6 +11,8 @@ The app works as follows:
 - Icons are Fluent UI System Icons downloaded from [Icônes](https://github.com/antfu-collective/icones), though I'm no designer and just picked whatever that didn't hurt my eyes.
 - Media files are read with the web File API, demuxed with [Mediabunny](https://mediabunny.dev/), decoded with the WebCodecs API, then rendered onto a canvas.
 
+Honestly, the best way to get to know this project might be to ask your AI agent of choice to have a go at my `CLAUDE.md` (or read it yourself).
+
 # Machine Setup
 
 Follow the [Tauri documentation](https://v2.tauri.app/start/prerequisites/) to install all dependencies.

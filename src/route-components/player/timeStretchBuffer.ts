@@ -47,8 +47,8 @@ const timeStretchChannel = ({
 
     for (let i = 0; i < grainLength; i++) {
       // Apply Hann window for smooth overlap-add crossfading.
-      output[synthesisPosition + i] +=
-        input[analysisPosition + i] * hannWindow[i];
+      output[synthesisPosition + i]! +=
+        input[analysisPosition + i]! * hannWindow[i]!;
     }
 
     analysisPosition += analysisHop;
