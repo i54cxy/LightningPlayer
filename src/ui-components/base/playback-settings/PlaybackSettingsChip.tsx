@@ -3,6 +3,7 @@ import {
   chipContainerStyles,
   chipIconStyles,
   chipRightIconContainerStyles,
+  chipTextCenteredStyles,
   chipTextStyles,
 } from "./PlaybackSettingsChip.styles";
 
@@ -13,7 +14,7 @@ export interface IPlaybackSettingsChipProps {
   /** Whether the chip is disabled. */
   disabled?: boolean;
   /** The icon element displayed on the left side of the chip. */
-  icon: ReactNode;
+  icon?: ReactNode;
   /** Click handler for the chip. */
   onClick: () => void;
   /** Optional element displayed on the right side (e.g., chevron for submenu). */
@@ -51,8 +52,8 @@ export const PlaybackSettingsChip: FC<IPlaybackSettingsChipProps> = ({
       onClick={onClick}
       {...htmlAttributes}
     >
-      <span css={chipIconStyles}>{icon}</span>
-      <span css={chipTextStyles}>{text}</span>
+      {icon && <span css={chipIconStyles}>{icon}</span>}
+      <span css={[chipTextStyles, !icon && chipTextCenteredStyles]}>{text}</span>
       {rightIcon && <span css={chipRightIconContainerStyles}>{rightIcon}</span>}
     </button>
   );

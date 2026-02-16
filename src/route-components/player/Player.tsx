@@ -14,6 +14,7 @@ import { inputFilesState } from "../../shared/atoms/inputFilesState";
 import { flipHorizontalState } from "../../shared/atoms/player-controls/flipHorizontalState";
 import { flipVerticalState } from "../../shared/atoms/player-controls/flipVerticalState";
 import { isMutedState } from "../../shared/atoms/player-controls/isMutedState";
+import { playbackSpeedState } from "../../shared/atoms/player-controls/playbackSpeedState";
 import { rotationState } from "../../shared/atoms/player-controls/rotationState";
 import { volumeState } from "../../shared/atoms/player-controls/volumeState";
 import { titleBarTextState } from "../../shared/atoms/titleBarTextState";
@@ -36,12 +37,14 @@ export const Player: FC = () => {
   const currentPlayingFile = files[0];
   const setTitleBarText = useSetAtom(titleBarTextState);
 
-  const flipHorizontal = useAtomValue(flipHorizontalState);
+  const [flipHorizontal, setFlipHorizontal] = useAtom(flipHorizontalState);
   const flipHorizontalRef = useRef(flipHorizontal);
-  const flipVertical = useAtomValue(flipVerticalState);
+  const [flipVertical, setFlipVertical] = useAtom(flipVerticalState);
   const flipVerticalRef = useRef(flipVertical);
   const [isMuted, setIsMuted] = useAtom(isMutedState);
-  const rotation = useAtomValue(rotationState);
+  const [playbackSpeed, setPlaybackSpeed] = useAtom(playbackSpeedState);
+  const playbackSpeedRef = useRef(playbackSpeed);
+  const [rotation, setRotation] = useAtom(rotationState);
   const rotationRef = useRef(rotation);
   const [volume, setVolume] = useAtom(volumeState);
 
@@ -144,6 +147,7 @@ export const Player: FC = () => {
         gainNode: gainNodeRef.current,
         playbackClock: playbackClockRef.current,
         queuedAudioNodes: queuedAudioNodesRef.current,
+        speed: playbackSpeedRef.current,
       });
     }
   };
@@ -356,6 +360,13 @@ export const Player: FC = () => {
         setDuration(duration);
         setSelectedAudioTrackIndex(0);
 
+        // Reset playback settings when loading a new file.
+        setFlipHorizontal(false);
+        setFlipVertical(false);
+        setIsPlaying(false);
+        setPlaybackSpeed(1);
+        setRotation(0);
+
         // Render first frame.
         await startVideoIterator({
           asyncIdRef,
@@ -383,7 +394,13 @@ export const Player: FC = () => {
       cleanupPlayback();
       thumbnailCacheRef.current?.dispose();
     };
-  }, [currentPlayingFile]);
+  }, [
+    currentPlayingFile,
+    setFlipHorizontal,
+    setFlipVertical,
+    setPlaybackSpeed,
+    setRotation,
+  ]);
 
   // Start render loop after file is loaded.
   useEffect(() => {
@@ -509,6 +526,39 @@ export const Player: FC = () => {
     }
   }, [currentAudioSink, isMuted, volume]);
 
+  // Sync speed ref and handle live speed changes during playback.
+  useEffect(() => {
+    playbackSpeedRef.current = playbackSpeed;
+
+    if (!playbackClockRef.current) return;
+
+    playbackClockRef.current.setSpeed(playbackSpeed);
+
+    // If currently playing, restart audio scheduling with new speed.
+    if (playbackClockRef.current.isPlaying && gainNodeRef.current) {
+      // Stop all currently queued audio nodes.
+      for (const node of queuedAudioNodesRef.current) {
+        node.stop();
+      }
+      queuedAudioNodesRef.current.clear();
+      audioBufferIteratorRef.current?.return();
+
+      // Restart audio from current position with new speed.
+      if (currentAudioSink) {
+        audioBufferIteratorRef.current = currentAudioSink.buffers(
+          playbackClockRef.current.currentTime,
+        );
+        runAudioIterator({
+          audioBufferIterator: audioBufferIteratorRef.current,
+          gainNode: gainNodeRef.current,
+          playbackClock: playbackClockRef.current,
+          queuedAudioNodes: queuedAudioNodesRef.current,
+          speed: playbackSpeed,
+        });
+      }
+    }
+  }, [currentAudioSink, playbackSpeed]);
+
   const handleMuteToggle = () => {
     setIsMuted(!isMuted);
   };
@@ -554,14 +604,16 @@ export const Player: FC = () => {
     const audioContext = new AudioContext({
       sampleRate: newTrack.sampleRate,
     });
-    audioContextRef.current = audioContext;
-
     const gainNode = audioContext.createGain();
     gainNode.connect(audioContext.destination);
     gainNode.gain.value = isMuted ? 0 : volume * volume;
     gainNodeRef.current = gainNode;
+    // Keeping it here after the assignments to avoid React Compiler
+    // false positive immutability error.
+    audioContextRef.current = audioContext;
 
     const playbackClock = new PlaybackClock(audioContext);
+    playbackClock.speed = playbackSpeedRef.current;
     playbackClock.seek(currentTime);
     playbackClockRef.current = playbackClock;
 
@@ -583,6 +635,7 @@ export const Player: FC = () => {
         gainNode,
         playbackClock,
         queuedAudioNodes: queuedAudioNodesRef.current,
+        speed: playbackSpeedRef.current,
       });
     }
   };

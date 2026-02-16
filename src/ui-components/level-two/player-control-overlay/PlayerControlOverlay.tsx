@@ -3,6 +3,7 @@ import {
   FC,
   MouseEventHandler,
   RefObject,
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -164,18 +165,21 @@ export const PlayerControlOverlay: FC<IPlayerControlOverlayProps> = ({
    * Starts (or restarts) the idle timer. When the timer expires and no
    * blocking condition is active, the overlay will be hidden.
    */
-  const startIdleTimer = () => {
+  const startIdleTimer = useCallback(() => {
     if (idleTimerRef.current !== undefined) {
       clearTimeout(idleTimerRef.current);
     }
-    idleTimerRef.current = setTimeout(() => {
-      if (shouldBlockIdleHideRef.current) {
-        startIdleTimer();
-      } else {
-        setIsOverlayShown(false);
-      }
-    }, IDLE_TIMEOUT_MS);
-  };
+    const startIdleTimerImpl = () => {
+      idleTimerRef.current = setTimeout(() => {
+        if (shouldBlockIdleHideRef.current) {
+          startIdleTimerImpl();
+        } else {
+          setIsOverlayShown(false);
+        }
+      }, IDLE_TIMEOUT_MS);
+    };
+    startIdleTimerImpl();
+  }, []);
 
   // Start idle timer on mount, clean up on unmount.
   useEffect(() => {
@@ -185,8 +189,7 @@ export const PlayerControlOverlay: FC<IPlayerControlOverlayProps> = ({
         clearTimeout(idleTimerRef.current);
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [startIdleTimer]);
 
   /**
    * Centralized handler for player control interactions. Manages cleanup of

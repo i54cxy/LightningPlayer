@@ -47,6 +47,11 @@ export const chipRightIconContainerStyles = css({
   },
 });
 
+export const chipTextCenteredStyles = css({
+  textAlign: "center",
+  width: "100%",
+});
+
 export const chipTextStyles = css({
   fontSize: 14,
   whiteSpace: "nowrap",

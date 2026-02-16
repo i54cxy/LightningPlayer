@@ -2,11 +2,13 @@ import { FC, useState } from "react";
 import ChevronRightIcon from "../../../assets/svgs/chevron-right.svg?react";
 import FlipHorizontalIcon from "../../../assets/svgs/flip-horizontal.svg?react";
 import RotateClockwiseIcon from "../../../assets/svgs/rotate-clockwise.svg?react";
+import SpeedometerIcon from "../../../assets/svgs/speedometer.svg?react";
 import { playbackSettingsContainerStyles } from "./PlaybackSettings.styles";
 import { PlaybackSettingsMenu } from "./PlaybackSettings.types";
 import { PlaybackSettingsChip } from "./PlaybackSettingsChip";
 import { PlaybackSettingsFlipMenu } from "./PlaybackSettingsFlipMenu";
 import { PlaybackSettingsRotationMenu } from "./PlaybackSettingsRotationMenu";
+import { PlaybackSettingsSpeedMenu } from "./PlaybackSettingsSpeedMenu";
 
 export interface IPlaybackSettingsProps {
   /** Style override for the outmost container. */
@@ -29,7 +31,11 @@ export const PlaybackSettings: FC<IPlaybackSettingsProps> = ({ className }) => {
   const handleOnRotationClick = () =>
     setCurrentMenu(PlaybackSettingsMenu.Rotation);
 
+  const handleOnSpeedClick = () => setCurrentMenu(PlaybackSettingsMenu.Speed);
+
   const handleRotationOnBack = () => setCurrentMenu(PlaybackSettingsMenu.Main);
+
+  const handleSpeedOnBack = () => setCurrentMenu(PlaybackSettingsMenu.Main);
 
   return (
     <div className={className} css={playbackSettingsContainerStyles}>
@@ -47,6 +53,12 @@ export const PlaybackSettings: FC<IPlaybackSettingsProps> = ({ className }) => {
             rightIcon={<ChevronRightIcon />}
             text="Rotate"
           />
+          <PlaybackSettingsChip
+            icon={<SpeedometerIcon />}
+            onClick={handleOnSpeedClick}
+            rightIcon={<ChevronRightIcon />}
+            text="Speed"
+          />
         </>
       )}
       {currentMenu === PlaybackSettingsMenu.Flip && (
@@ -54,6 +66,9 @@ export const PlaybackSettings: FC<IPlaybackSettingsProps> = ({ className }) => {
       )}
       {currentMenu === PlaybackSettingsMenu.Rotation && (
         <PlaybackSettingsRotationMenu onBack={handleRotationOnBack} />
+      )}
+      {currentMenu === PlaybackSettingsMenu.Speed && (
+        <PlaybackSettingsSpeedMenu onBack={handleSpeedOnBack} />
       )}
     </div>
   );

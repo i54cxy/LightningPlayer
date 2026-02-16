@@ -16,3 +16,6 @@ export enum PlayerControlElement {
 }
 /** Duration in milliseconds before the overlay auto-hides due to mouse inactivity. */
 export const IDLE_TIMEOUT_MS = 3000;
+
+export const playerControlButtonContainerHeight = 40;
+export const playerControlButtonContainerMarginTop = 8;
