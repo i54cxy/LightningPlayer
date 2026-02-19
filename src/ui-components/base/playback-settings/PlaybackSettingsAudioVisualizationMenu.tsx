@@ -16,6 +16,7 @@ import {
 /** Active visualization mode options. */
 const VISUALIZATION_OPTIONS = [
   { label: "Frequency Real-Time", value: AudioVisualization.FrequencyRealTime },
+  { label: "Waveform Overview", value: AudioVisualization.OverviewWaveform },
   { label: "Waveform Real-Time", value: AudioVisualization.WaveformRealTime },
 ];
 

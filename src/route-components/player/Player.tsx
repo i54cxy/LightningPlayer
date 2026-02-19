@@ -30,13 +30,18 @@ import { FullscreenContainer } from "../../ui-components/base/fullscreen-contain
 import { PlaybackMessage } from "../../ui-components/base/playback-message/PlaybackMessage";
 import { PlayerControlOverlay } from "../../ui-components/level-two/player-control-overlay/PlayerControlOverlay";
 import { computeAnalyserWindowMs } from "./computeAnalyserWindowMs";
+import { computeWaveformOverview } from "./computeWaveformOverview";
 import { drawAudioFrequencyBars } from "./drawAudioFrequencyBars";
 import { drawAudioWaveform } from "./drawAudioWaveform";
+import { drawWaveformOverview } from "./drawWaveformOverview";
 import { drawVideoFrame } from "./drawVideoFrame";
 import { getThumbnail } from "./getThumbnail";
 import { PlaybackClock } from "./PlaybackClock";
 import { audioVisualizationCanvasStyles } from "./Player.styles";
-import { AUDIO_ANALYSER_FFT_SIZE } from "./Player.types";
+import {
+  AUDIO_ANALYSER_FFT_SIZE,
+  WAVEFORM_OVERVIEW_WINDOW_SEC,
+} from "./Player.types";
 import { PreviewThumbnailCache } from "./PreviewThumbnailCache";
 import { runAudioIterator } from "./runAudioIterator";
 import { startVideoIterator } from "./startVideoIterator";
@@ -108,6 +113,13 @@ export const Player: FC = () => {
 
   // Ref to the audio visualization canvas, rendered on top of the video canvas.
   const audioVisualizationCanvasRef = useRef<HTMLCanvasElement>(null);
+  // Precomputed whole-file peak data for the OverviewWaveform visualization.
+  const waveformOverviewRef = useRef<Float32Array>(undefined);
+  // Window size in seconds for the OverviewWaveform visualization.
+  const [waveformOverviewWindowSec, setWaveformOverviewWindowSec] = useState(
+    WAVEFORM_OVERVIEW_WINDOW_SEC,
+  );
+  const waveformOverviewWindowSecRef = useRef(WAVEFORM_OVERVIEW_WINDOW_SEC);
 
   // asyncId for startVideoIterator. Only incremented in startVideoIterator when
   // the user starts a new seek. updateNextFrame checks this asyncId to discard
@@ -305,6 +317,11 @@ export const Player: FC = () => {
     audioVisualizationRef.current = audioVisualization;
   }, [audioVisualization]);
 
+  // Sync waveformOverviewWindowSecRef for stale-closure-safe access in the render loop.
+  useEffect(() => {
+    waveformOverviewWindowSecRef.current = waveformOverviewWindowSec;
+  }, [waveformOverviewWindowSec]);
+
   // Sync transform refs and redraw when flip/rotation changes while paused.
   useEffect(() => {
     flipHorizontalRef.current = flipHorizontal;
@@ -446,6 +463,22 @@ export const Player: FC = () => {
         }
 
         setAnalyserNodeWindow(computeAnalyserWindowMs(analyserNode));
+
+        // Kick off whole-file peak computation in the background.
+        waveformOverviewRef.current = undefined;
+        if (audioTracks[0]) {
+          computeWaveformOverview({
+            audioTrack: audioTracks[0],
+            duration,
+            isCancelled: () => cancelled,
+          })
+            .then((data) => {
+              if (data) {
+                waveformOverviewRef.current = data;
+              }
+            })
+            .catch(console.error);
+        }
 
         setAudioTracks(audioTracks);
         setAudioVisualization(
@@ -595,6 +628,22 @@ export const Player: FC = () => {
               });
             }
           }
+        } else if (
+          audioVisualizationRef.current ===
+            AudioVisualization.OverviewWaveform &&
+          audioVisualizationCanvasRef.current
+        ) {
+          const vizCtx =
+            audioVisualizationCanvasRef.current.getContext("2d");
+          if (vizCtx) {
+            drawWaveformOverview({
+              ctx: vizCtx,
+              currentTime: playbackTime,
+              screenDimensions: screenDimensionsRef.current,
+              waveformData: waveformOverviewRef.current,
+              windowSec: waveformOverviewWindowSecRef.current,
+            });
+          }
         }
 
         if (!isDraggingProgressBarRef.current) {
@@ -635,7 +684,7 @@ export const Player: FC = () => {
     };
   }, [currentPlayingFile, setTitleBarText]);
 
-  // Update playback message when audio visualization mode changes.
+  // Update playback message when audio visualization mode or window size changes.
   useEffect(() => {
     if (
       (audioVisualization === AudioVisualization.WaveformRealTime ||
@@ -643,10 +692,35 @@ export const Player: FC = () => {
       analyserNodeWindow
     ) {
       setPlaybackMessage(`Time window: ${analyserNodeWindow} ms`);
+    } else if (audioVisualization === AudioVisualization.OverviewWaveform) {
+      setPlaybackMessage(`Time window: ${waveformOverviewWindowSec} s`);
     } else {
       setPlaybackMessage(undefined);
     }
-  }, [audioVisualization, analyserNodeWindow, setPlaybackMessage]);
+  }, [
+    audioVisualization,
+    analyserNodeWindow,
+    setPlaybackMessage,
+    waveformOverviewWindowSec,
+  ]);
+
+  // Keyboard handler for waveform overview window zoom (+/-).
+  useEffect(() => {
+    if (audioVisualization !== AudioVisualization.OverviewWaveform) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "-") {
+        setWaveformOverviewWindowSec((prev) => Math.max(1, prev / 2));
+      } else if (e.key === "+" || e.key === "=") {
+        setWaveformOverviewWindowSec((prev) => Math.min(3600, prev * 2));
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [audioVisualization]);
 
   // Playback cleanup on unmount only.
   useEffect(() => {
