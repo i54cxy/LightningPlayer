@@ -25,6 +25,7 @@ export const submenuBackButtonStyles = css({
 export const submenuBackButtonTextStyles = css({
   fontSize: 14,
   fontWeight: 500,
+  whiteSpace: "nowrap",
 });
 
 export const submenuSeparatorStyles = css({

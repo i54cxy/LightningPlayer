@@ -1,0 +1,1 @@
+export const AUDIO_ANALYSER_FFT_SIZE = 4096;

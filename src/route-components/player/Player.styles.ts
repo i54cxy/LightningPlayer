@@ -7,3 +7,17 @@ export const playerControlOverlayStyles = css({
   top: 0,
   width: "100%",
 });
+
+export const audioVisualizationCanvasStyles = css({
+  background: "black",
+  height: "100%",
+  left: 0,
+  pointerEvents: "none",
+  position: "absolute",
+  top: 0,
+  width: "100%",
+
+  "&:not([data-visible=true])": {
+    display: "none",
+  },
+});

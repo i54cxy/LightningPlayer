@@ -44,6 +44,9 @@ declare module "@emotion/react" {
           track: string;
         };
       };
+      playbackMessage: {
+        color: string;
+      };
       root: {
         background: string;
       };

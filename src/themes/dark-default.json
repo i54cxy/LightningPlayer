@@ -41,6 +41,9 @@
         "track": "rgba(255, 255, 255, 0.25)"
       }
     },
+    "playbackMessage": {
+      "color": "rgba(255, 255, 255, 0.7)"
+    },
     "root": {
       "background": "rgb(0, 0, 0)"
     },

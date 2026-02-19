@@ -11,6 +11,11 @@ import {
 } from "mediabunny";
 import { FC, useCallback, useEffect, useRef, useState } from "react";
 import { inputFilesState } from "../../shared/atoms/inputFilesState";
+import { playbackMessageState } from "../../shared/atoms/playbackMessageState";
+import {
+  AudioVisualization,
+  audioVisualizationState,
+} from "../../shared/atoms/player-controls/audioVisualizationState";
 import { flipHorizontalState } from "../../shared/atoms/player-controls/flipHorizontalState";
 import { flipVerticalState } from "../../shared/atoms/player-controls/flipVerticalState";
 import { isMutedState } from "../../shared/atoms/player-controls/isMutedState";
@@ -22,10 +27,14 @@ import { useDimensions } from "../../shared/hooks/useDimensions";
 import { IDimensions } from "../../shared/types/dimensions";
 import { isTruthy } from "../../shared/utils/isTruthy";
 import { FullscreenContainer } from "../../ui-components/base/fullscreen-container/FullscreenContainer";
+import { PlaybackMessage } from "../../ui-components/base/playback-message/PlaybackMessage";
 import { PlayerControlOverlay } from "../../ui-components/level-two/player-control-overlay/PlayerControlOverlay";
-import { draw } from "./draw";
+import { drawAudioWaveform } from "./drawAudioWaveform";
+import { drawVideoFrame } from "./drawVideoFrame";
 import { getThumbnail } from "./getThumbnail";
 import { PlaybackClock } from "./PlaybackClock";
+import { audioVisualizationCanvasStyles } from "./Player.styles";
+import { AUDIO_ANALYSER_FFT_SIZE } from "./Player.types";
 import { PreviewThumbnailCache } from "./PreviewThumbnailCache";
 import { runAudioIterator } from "./runAudioIterator";
 import { startVideoIterator } from "./startVideoIterator";
@@ -36,8 +45,13 @@ import { updateTimestampDOM } from "./updateTimestampDOM";
 export const Player: FC = () => {
   const files = useAtomValue(inputFilesState);
   const currentPlayingFile = files[0];
+  const setPlaybackMessage = useSetAtom(playbackMessageState);
   const setTitleBarText = useSetAtom(titleBarTextState);
 
+  const [audioVisualization, setAudioVisualization] = useAtom(
+    audioVisualizationState,
+  );
+  const audioVisualizationRef = useRef(audioVisualization);
   const [flipHorizontal, setFlipHorizontal] = useAtom(flipHorizontalState);
   const flipHorizontalRef = useRef(flipHorizontal);
   const [flipVertical, setFlipVertical] = useAtom(flipVerticalState);
@@ -72,6 +86,10 @@ export const Player: FC = () => {
 
   // Whether the current file has video tracks.
   const [hasVideo, setHasVideo] = useState(false);
+  // For waveform audio visualization.
+  const [analyserNodeWindow, setAnalyserNodeWindow] = useState<
+    number | undefined
+  >(undefined);
 
   // progressRef and the progress bar element are not updated until dragging ends.
   const isDraggingProgressBarRef = useRef<boolean>(false);
@@ -83,6 +101,11 @@ export const Player: FC = () => {
   const queuedAudioNodesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
   // Kept as a ref as it doesn't affect rendering.
   const gainNodeRef = useRef<GainNode>(undefined);
+  // AnalyserNode for audio visualization. Always created with the AudioContext.
+  const analyserNodeRef = useRef<AnalyserNode>(undefined);
+
+  // Ref to the audio visualization canvas, rendered on top of the video canvas.
+  const audioVisualizationCanvasRef = useRef<HTMLCanvasElement>(null);
 
   // asyncId for startVideoIterator. Only incremented in startVideoIterator when
   // the user starts a new seek. updateNextFrame checks this asyncId to discard
@@ -239,9 +262,13 @@ export const Player: FC = () => {
           width: fullscreenContainerRef.current.offsetWidth,
         };
         screenDimensionsRef.current = dimensions;
-        if (canvasRef.current) {
+        if (audioVisualizationCanvasRef.current && canvasRef.current) {
+          audioVisualizationCanvasRef.current.width = dimensions.width;
+          audioVisualizationCanvasRef.current.height = dimensions.height;
           canvasRef.current.width = dimensions.width;
           canvasRef.current.height = dimensions.height;
+        } else {
+          console.error("Unexpected intialization error: canvases not ready.");
         }
       }
     }
@@ -255,17 +282,26 @@ export const Player: FC = () => {
         screenDimensions.width !== screenDimensionsRef.current?.width
       ) {
         screenDimensionsRef.current = screenDimensions;
-        if (canvasRef.current && playbackClockRef.current) {
+        if (audioVisualizationCanvasRef.current && canvasRef.current) {
+          audioVisualizationCanvasRef.current.width = screenDimensions.width;
+          audioVisualizationCanvasRef.current.height = screenDimensions.height;
           canvasRef.current.width = screenDimensions.width;
           canvasRef.current.height = screenDimensions.height;
           // Redraw immediately if paused.
-          if (!playbackClockRef.current.isPlaying) {
+          if (playbackClockRef.current && !playbackClockRef.current.isPlaying) {
             seekImpl(playbackClockRef.current.currentTime);
           }
+        } else {
+          console.error("Unexpected resize error: canvases not ready.");
         }
       }
     }
   }, [screenDimensions, seekImpl]);
+
+  // Sync audioVisualizationRef for stale-closure-safe access in the render loop.
+  useEffect(() => {
+    audioVisualizationRef.current = audioVisualization;
+  }, [audioVisualization]);
 
   // Sync transform refs and redraw when flip/rotation changes while paused.
   useEffect(() => {
@@ -340,6 +376,11 @@ export const Player: FC = () => {
         throw new Error("loadFile: no decodable video or audio tracks found.");
       }
 
+      // Bail out if cancelled before touching shared refs. A cancelled loadFile
+      // (e.g. React StrictMode double-invocation) must not clean up state that
+      // a newer, still-live loadFile call has already set up.
+      if (cancelled) return;
+
       // New file has valid tracks. Clean up old playback before setting up new state.
       cleanupPlayback();
 
@@ -379,8 +420,12 @@ export const Player: FC = () => {
         audioContextRef.current = audioContext;
 
         const gainNode = audioContext.createGain();
-        gainNode.connect(audioContext.destination);
+        const analyserNode = audioContext.createAnalyser();
+        analyserNode.fftSize = AUDIO_ANALYSER_FFT_SIZE;
+        gainNode.connect(analyserNode);
+        analyserNode.connect(audioContext.destination);
         gainNodeRef.current = gainNode;
+        analyserNodeRef.current = analyserNode;
 
         // Create PlaybackClock with the AudioContext.
         const playbackClock = new PlaybackClock(audioContext);
@@ -398,7 +443,19 @@ export const Player: FC = () => {
           thumbnailCacheRef.current = undefined;
         }
 
+        const windowMs = Math.round(
+          (analyserNodeRef.current.fftSize /
+            analyserNodeRef.current.context.sampleRate) *
+            1000,
+        );
+        setAnalyserNodeWindow(windowMs);
+
         setAudioTracks(audioTracks);
+        setAudioVisualization(
+          videoTracks[0]
+            ? AudioVisualization.Off
+            : AudioVisualization.WaveformRealTime,
+        );
         setCurrentAudioSink(audioSink);
         setCurrentVideoSink(videoSink);
         setDuration(duration);
@@ -437,6 +494,7 @@ export const Player: FC = () => {
     };
   }, [
     currentPlayingFile,
+    setAudioVisualization,
     setFlipHorizontal,
     setFlipVertical,
     setPlaybackSpeed,
@@ -489,7 +547,7 @@ export const Player: FC = () => {
           // console.log(
           //   `render: drawing frame at ${nextFrame.timestamp}, playbackTime: ${playbackTime}`,
           // );
-          draw({
+          drawVideoFrame({
             ctx,
             flipHorizontal: flipHorizontalRef.current,
             flipVertical: flipVerticalRef.current,
@@ -511,6 +569,23 @@ export const Player: FC = () => {
             screenDimensions: screenDimensionsRef.current,
             videoFrameIterator: videoFrameIteratorRef.current,
           });
+        }
+
+        if (
+          audioVisualizationRef.current ===
+            AudioVisualization.WaveformRealTime &&
+          analyserNodeRef.current &&
+          audioVisualizationCanvasRef.current
+        ) {
+          const waveformCtx =
+            audioVisualizationCanvasRef.current.getContext("2d");
+          if (waveformCtx) {
+            drawAudioWaveform({
+              analyserNode: analyserNodeRef.current,
+              ctx: waveformCtx,
+              screenDimensions: screenDimensionsRef.current,
+            });
+          }
         }
 
         if (!isDraggingProgressBarRef.current) {
@@ -550,6 +625,18 @@ export const Player: FC = () => {
       document.title = "Lighting Player";
     };
   }, [currentPlayingFile, setTitleBarText]);
+
+  // Update playback message when audio visualization mode changes.
+  useEffect(() => {
+    if (
+      audioVisualization === AudioVisualization.WaveformRealTime &&
+      analyserNodeWindow
+    ) {
+      setPlaybackMessage(`Time window: ${analyserNodeWindow} ms`);
+    } else {
+      setPlaybackMessage(undefined);
+    }
+  }, [audioVisualization, analyserNodeWindow, setPlaybackMessage]);
 
   // Playback cleanup on unmount only.
   useEffect(() => {
@@ -647,9 +734,13 @@ export const Player: FC = () => {
       sampleRate: newTrack.sampleRate,
     });
     const gainNode = audioContext.createGain();
-    gainNode.connect(audioContext.destination);
+    const analyserNode = audioContext.createAnalyser();
+    analyserNode.fftSize = AUDIO_ANALYSER_FFT_SIZE;
+    gainNode.connect(analyserNode);
+    analyserNode.connect(audioContext.destination);
     gainNode.gain.value = isMuted ? 0 : volume * volume;
     gainNodeRef.current = gainNode;
+    analyserNodeRef.current = analyserNode;
     // Keeping it here after the assignments to avoid React Compiler
     // false positive immutability error.
     audioContextRef.current = audioContext;
@@ -718,6 +809,14 @@ export const Player: FC = () => {
 
   return (
     <FullscreenContainer ref={fullscreenContainerRef}>
+      <canvas ref={canvasRef} />
+      <canvas
+        css={audioVisualizationCanvasStyles}
+        data-visible={audioVisualization !== AudioVisualization.Off}
+        ref={audioVisualizationCanvasRef}
+      />
+      <PlaybackMessage />
+
       {currentPlayingFile && (
         <PlayerControlOverlay
           audioTracks={audioTracks}
@@ -739,8 +838,6 @@ export const Player: FC = () => {
           volume={volume}
         />
       )}
-
-      <canvas ref={canvasRef} />
     </FullscreenContainer>
   );
 };
