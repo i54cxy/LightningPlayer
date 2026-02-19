@@ -13,9 +13,10 @@ import {
   submenuSeparatorStyles,
 } from "./PlaybackSettingsSubMenu.styles";
 
-/** Available audio visualization options. */
+/** Active visualization mode options. */
 const VISUALIZATION_OPTIONS = [
-  { label: "Off", value: AudioVisualization.Off },
+  { label: "Frequency Real-Time", value: AudioVisualization.FrequencyRealTime },
+  { label: "Waveform Overview", value: AudioVisualization.OverviewWaveform },
   { label: "Waveform Real-Time", value: AudioVisualization.WaveformRealTime },
 ];
 
@@ -26,7 +27,8 @@ export interface IPlaybackSettingsAudioVisualizationMenuProps {
 
 /**
  * A sub-menu within PlaybackSettings for audio visualization options.
- * Displays a back button, separator, and option chips for Off and Waveform modes.
+ * Displays a back button, separator, visualization mode chips, a second
+ * separator, and the Off chip in its own section at the bottom.
  *
  * @param props - The component props.
  * @param props.onBack - Callback to navigate back to the main menu.
@@ -60,6 +62,13 @@ export const PlaybackSettingsAudioVisualizationMenu: FC<
           text={option.label}
         />
       ))}
+      <hr css={submenuSeparatorStyles} />
+      <PlaybackSettingsChip
+        css={selectedTextStyles}
+        data-toggled-on={audioVisualization === AudioVisualization.Off}
+        onClick={() => handleSelectVisualization(AudioVisualization.Off)}
+        text="Off"
+      />
     </>
   );
 };

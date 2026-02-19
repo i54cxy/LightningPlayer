@@ -155,6 +155,30 @@ Schedules audio buffers using Web Audio API:
 
 **Cleanup (`cleanupPlayback`):** Pauses the clock, clears `nextFrameRef`, stops all nodes in `queuedAudioNodes` via `node.stop()`, releases audio and video iterators via `.return()`, disposes the thumbnail cache, and clears the canvas.
 
+#### Audio visualization
+
+The visualization canvas (`audioVisualizationCanvasRef`) is a separate full-screen `<canvas>` overlaid on top of the video canvas with `pointerEvents: none`. Its visibility is controlled by the `data-visible` attribute, which is set from the `audioVisualization` atom (`src/shared/atoms/player-controls/audioVisualizationState.ts`).
+
+**Modes (`AudioVisualization` enum):**
+
+- `WaveformRealTime` — oscilloscope drawn by `drawAudioWaveform` (`src/route-components/player/drawAudioWaveform.ts`). Uses `getByteTimeDomainData`. Stroke is a vertical gradient: red at the top and bottom edges (peak amplitude) transitioning to blue at the centre line (silence).
+- `FrequencyRealTime` — spectrum analyser drawn by `drawAudioFrequencyBars` (`src/route-components/player/drawAudioFrequencyBars.ts`). Uses `getByteFrequencyData`. 80 bars mapped on a logarithmic frequency scale (20 Hz–Nyquist). Bar height is capped at 90% of canvas height. Fill is a vertical gradient: blue at the bottom (quiet) → violet → orange-red at the top (loud).
+- `Off` — canvas is hidden.
+
+**AnalyserNode pipeline:**
+
+```
+AudioBufferSourceNode → GainNode → AnalyserNode → AudioContext.destination
+```
+
+`fftSize` is set to `AUDIO_ANALYSER_FFT_SIZE` (4096), giving `frequencyBinCount` = 2048 and a time window of ~93 ms at 44.1 kHz. The window duration is computed by `computeAnalyserWindowMs` (`src/route-components/player/computeAnalyserWindowMs.ts`) and displayed as a `PlaybackMessage` (`"Time window: X ms"`) while either visualization mode is active.
+
+**Render loop:** Both draw functions are called on every `requestAnimationFrame` tick (same loop as video frame rendering) when the corresponding mode is active.
+
+**Auto-selection on file load:** Audio-only files default to `FrequencyRealTime`; files with video tracks default to `Off`.
+
+**Menu:** `PlaybackSettingsAudioVisualizationMenu` (`src/ui-components/base/playback-settings/PlaybackSettingsAudioVisualizationMenu.tsx`) lists the two active modes, then a separator, then `Off` in its own section at the bottom.
+
 #### Imperative DOM updates
 
 To avoid React re-renders on every frame during playback, certain UI elements are updated imperatively via `document.getElementById`. Element IDs are exported as consts from the component that renders them:

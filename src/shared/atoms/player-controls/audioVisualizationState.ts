@@ -1,7 +1,9 @@
 import { atomWithStorage } from "jotai/utils";
 
 export enum AudioVisualization {
+  FrequencyRealTime = "FrequencyRealTime",
   Off = "Off",
+  OverviewWaveform = "OverviewWaveform",
   WaveformRealTime = "WaveformRealTime",
 }
 

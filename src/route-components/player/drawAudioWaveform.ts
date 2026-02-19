@@ -2,6 +2,10 @@ import { IDimensions } from "../../shared/types/dimensions";
 
 /**
  * Draws an oscilloscope-style waveform visualization onto the canvas.
+ * A vertical gradient colours the stroke by amplitude displacement: blue at
+ * the centre line (silence) transitioning to red at the top and bottom edges
+ * (peak amplitude), symmetrically for both positive and negative excursions.
+ *
  * Clears the canvas before drawing, so the CSS background color is revealed.
  *
  * @param params.analyserNode - The Web Audio AnalyserNode to read time-domain data from.
@@ -24,9 +28,16 @@ export const drawAudioWaveform = ({
 
   ctx.clearRect(0, 0, width, height);
 
+  // Vertical gradient symmetric around the centre: red at the edges (peak
+  // amplitude) and blue at the midpoint (silence / zero crossing).
+  const gradient = ctx.createLinearGradient(0, 0, 0, height);
+  gradient.addColorStop(0, "rgba(239, 68, 68, 0.9)"); // red-500   (top peak)
+  gradient.addColorStop(0.5, "rgba(255, 255, 255, 0.9)"); // blue-400  (centre)
+  gradient.addColorStop(1, "rgba(239, 68, 68, 0.9)"); // red-500   (bottom peak)
+
   ctx.beginPath();
   ctx.lineWidth = 2;
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.9)";
+  ctx.strokeStyle = gradient;
 
   const sliceWidth = width / bufferLength;
   let x = 0;
