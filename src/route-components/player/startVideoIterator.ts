@@ -1,7 +1,7 @@
 import { CanvasSink, WrappedCanvas } from "mediabunny";
 import { RefObject } from "react";
 import { IDimensions } from "../../shared/types/dimensions";
-import { draw } from "./draw";
+import { drawVideoFrame } from "./drawVideoFrame";
 import { PlaybackClock } from "./PlaybackClock";
 
 /**
@@ -72,7 +72,7 @@ export const startVideoIterator = async ({
       "startVideoIterator: drawing first frame at timestamp",
       firstFrame.timestamp,
     );
-    draw({
+    drawVideoFrame({
       ctx,
       flipHorizontal,
       flipVertical,

@@ -1,7 +1,7 @@
 import { WrappedCanvas } from "mediabunny";
 import { RefObject } from "react";
 import { IDimensions } from "../../shared/types/dimensions";
-import { draw } from "./draw";
+import { drawVideoFrame } from "./drawVideoFrame";
 import { PlaybackClock } from "./PlaybackClock";
 
 /**
@@ -63,7 +63,7 @@ export const updateNextFrame = async ({
       // console.log(
       //   `updateNextFrame: drawing frame at ${newNextFrame.timestamp}, playbackTime = ${playbackTime}`,
       // );
-      draw({
+      drawVideoFrame({
         ctx,
         flipHorizontal,
         flipVertical,

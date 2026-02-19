@@ -3,6 +3,7 @@ import { DragEventHandler, FC, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { ROUTES } from "../../../route-components/routes";
 import { inputFilesState } from "../../../shared/atoms/inputFilesState";
+import { getFilesFromDataTransferItems } from "../../../shared/utils/getFilesFromDataTransferItems";
 import { handleInputFiles } from "../../../shared/utils/handleInputFiles";
 import { dragAndDropOverlayContainerStyles } from "./DragAndDropOverlay.styles";
 import { DragAndDropState } from "./DragAndDropOverlay.types";
@@ -59,10 +60,11 @@ export const DragAndDropOverlay: FC = () => {
   const handleDragOver: DragEventHandler<HTMLDivElement> = (event) => {
     event.preventDefault();
   };
-  const handleDrop: DragEventHandler<HTMLDivElement> = (event) => {
+  const handleDrop: DragEventHandler<HTMLDivElement> = async (event) => {
     event.preventDefault();
     setDragAndDropState(DragAndDropState.None);
-    const files = event.dataTransfer.files;
+    const files = await getFilesFromDataTransferItems(event.dataTransfer.items);
+    console.log("Dropped files:", files);
     if (files.length) {
       const filteredFiles = handleInputFiles({ files, setInputFiles });
       if (filteredFiles.length) {

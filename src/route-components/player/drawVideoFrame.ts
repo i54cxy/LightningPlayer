@@ -11,7 +11,7 @@ import { IDimensions } from "../../shared/types/dimensions";
  * @param params.screenDimensions - The dimensions of the target canvas.
  * @param params.wrappedCanvas - The source video frame to draw.
  */
-export const draw = ({
+export const drawVideoFrame = ({
   ctx,
   flipHorizontal,
   flipVertical,
