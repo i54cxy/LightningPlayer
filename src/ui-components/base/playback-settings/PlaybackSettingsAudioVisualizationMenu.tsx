@@ -26,7 +26,7 @@ export interface IPlaybackSettingsAudioVisualizationMenuProps {
 
 /**
  * A sub-menu within PlaybackSettings for audio visualization options.
- * Displays a back button, separator, and option chips for Off and Waveform modes.
+ * Displays a back button, separator, and option chips for Off and Waveform Real-Time modes.
  *
  * @param props - The component props.
  * @param props.onBack - Callback to navigate back to the main menu.

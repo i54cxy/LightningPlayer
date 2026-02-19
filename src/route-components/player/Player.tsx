@@ -32,6 +32,7 @@ import { PlayerControlOverlay } from "../../ui-components/level-two/player-contr
 import { drawAudioWaveform } from "./drawAudioWaveform";
 import { drawVideoFrame } from "./drawVideoFrame";
 import { getThumbnail } from "./getThumbnail";
+import { computeAnalyserWindowMs } from "./computeAnalyserWindowMs";
 import { PlaybackClock } from "./PlaybackClock";
 import { audioVisualizationCanvasStyles } from "./Player.styles";
 import { AUDIO_ANALYSER_FFT_SIZE } from "./Player.types";
@@ -443,12 +444,7 @@ export const Player: FC = () => {
           thumbnailCacheRef.current = undefined;
         }
 
-        const windowMs = Math.round(
-          (analyserNodeRef.current.fftSize /
-            analyserNodeRef.current.context.sampleRate) *
-            1000,
-        );
-        setAnalyserNodeWindow(windowMs);
+        setAnalyserNodeWindow(computeAnalyserWindowMs(analyserNode));
 
         setAudioTracks(audioTracks);
         setAudioVisualization(
@@ -744,6 +740,7 @@ export const Player: FC = () => {
     // Keeping it here after the assignments to avoid React Compiler
     // false positive immutability error.
     audioContextRef.current = audioContext;
+    setAnalyserNodeWindow(computeAnalyserWindowMs(analyserNode));
 
     // Recompute duration for audio-only files since different audio tracks
     // may have different durations.
