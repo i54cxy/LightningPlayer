@@ -32,10 +32,6 @@ export class PreviewThumbnailCache {
   private cache = new Map<number, ICachedThumbnail>();
   private config: IPreviewThumbnailCacheConfig;
   private duration: number;
-  // Deduplicates concurrent requests for the same timestamp.
-  private inFlightByTimestamp = new Map<number, Promise<string | undefined>>();
-  // Serializes calls to videoSink.getCanvas to avoid decoder state races.
-  private serialDecodeQueue: Promise<void> = Promise.resolve();
   // Session ID for auto-fill; incremented to invalidate running loops.
   private linearAsyncId = 0;
   private totalMemoryBytes = 0;
@@ -65,7 +61,6 @@ export class PreviewThumbnailCache {
    */
   dispose(): void {
     this.stopAutoFill();
-    this.inFlightByTimestamp.clear();
     for (const entry of this.cache.values()) {
       URL.revokeObjectURL(entry.url);
     }
@@ -161,63 +156,42 @@ export class PreviewThumbnailCache {
    * Falls back to iterator if getCanvas returns null (e.g., no frame at exact timestamp 0).
    *
    * @param timestamp - The timestamp to fetch.
-   * @returns Image blob URL if fetch was successful.
+   * @returns True if fetch was successful.
    */
   async fetchAndCache(timestamp: number): Promise<string | undefined> {
-    const cached = this.get(timestamp);
-    if (cached) return cached;
+    try {
+      let canvas = await this.videoSink.getCanvas(timestamp);
 
-    const existingInFlight = this.inFlightByTimestamp.get(timestamp);
-    if (existingInFlight) {
-      return await existingInFlight;
-    }
+      // Fallback to the first frame at 0s.
+      if (!canvas && timestamp === 0) {
+        const iterator = this.videoSink.canvases(timestamp);
+        canvas = (await iterator.next()).value ?? null;
+        await iterator.return();
+      }
 
-    const requestPromise = this.withSerializedDecode(async () => {
-      try {
-        // Check cache again after waiting in the serialized queue.
-        const queuedCached = this.get(timestamp);
-        if (queuedCached) return queuedCached;
-
-        let canvas = await this.videoSink.getCanvas(timestamp);
-
-        // Fallback to the first frame at 0s.
-        if (!canvas && timestamp === 0) {
-          const iterator = this.videoSink.canvases(timestamp);
-          canvas = (await iterator.next()).value ?? null;
-          await iterator.return();
-        }
-
-        if (!canvas) {
-          console.error(
-            `PreviewThumbnailCache: error fetching canvas at ${timestamp}`,
-          );
-          return;
-        }
-
-        const blob = await canvasToThumbnailBlob(canvas.canvas);
-
-        if (!blob) {
-          console.error("PreviewThumbnailCache: error converting to blob");
-          return;
-        }
-
-        const url = URL.createObjectURL(blob);
-        this.set(timestamp, url, blob.size);
-        return url;
-      } catch (error) {
+      if (!canvas) {
         console.error(
-          `PreviewThumbnailCache: error fetching thumbnail at ${formatTimestamp(timestamp)}:`,
-          error,
+          `PreviewThumbnailCache: error fetching canvas at ${timestamp}`,
         );
         return;
       }
-    });
 
-    this.inFlightByTimestamp.set(timestamp, requestPromise);
-    try {
-      return await requestPromise;
-    } finally {
-      this.inFlightByTimestamp.delete(timestamp);
+      const blob = await canvasToThumbnailBlob(canvas.canvas);
+
+      if (!blob) {
+        console.error("PreviewThumbnailCache: error converting to blob");
+        return;
+      }
+
+      const url = URL.createObjectURL(blob);
+      this.set(timestamp, url, blob.size);
+      return url;
+    } catch (error) {
+      console.error(
+        `PreviewThumbnailCache: error fetching thumbnail at ${formatTimestamp(timestamp)}:`,
+        error,
+      );
+      return;
     }
   }
 
@@ -314,24 +288,6 @@ export class PreviewThumbnailCache {
    */
   private stopAutoFillLinear() {
     ++this.linearAsyncId;
-  }
-
-  /**
-   * Ensures decode tasks run strictly one-by-one.
-   *
-   * Rapid hover/seek can trigger many thumbnail requests, and overlapping
-   * decode calls may corrupt decoder state in browsers.
-   */
-  private async withSerializedDecode<T>(task: () => Promise<T>): Promise<T> {
-    // Queue this task behind the previous decode.
-    const run = this.serialDecodeQueue.then(() => task());
-    // Keep queue alive even if this task fails; callers still observe the
-    // original rejection from `run`.
-    this.serialDecodeQueue = run.then(
-      () => undefined,
-      () => undefined,
-    );
-    return run;
   }
 
   /**
