@@ -544,8 +544,10 @@ export const Player: FC = () => {
   // Update title bar text with the current file name.
   useEffect(() => {
     setTitleBarText(currentPlayingFile?.name ?? "");
+    document.title = currentPlayingFile?.name ?? "Lighting Player";
     return () => {
       setTitleBarText("");
+      document.title = "Lighting Player";
     };
   }, [currentPlayingFile, setTitleBarText]);
 
