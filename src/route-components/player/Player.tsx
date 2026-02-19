@@ -29,10 +29,11 @@ import { isTruthy } from "../../shared/utils/isTruthy";
 import { FullscreenContainer } from "../../ui-components/base/fullscreen-container/FullscreenContainer";
 import { PlaybackMessage } from "../../ui-components/base/playback-message/PlaybackMessage";
 import { PlayerControlOverlay } from "../../ui-components/level-two/player-control-overlay/PlayerControlOverlay";
+import { computeAnalyserWindowMs } from "./computeAnalyserWindowMs";
+import { drawAudioFrequencyBars } from "./drawAudioFrequencyBars";
 import { drawAudioWaveform } from "./drawAudioWaveform";
 import { drawVideoFrame } from "./drawVideoFrame";
 import { getThumbnail } from "./getThumbnail";
-import { computeAnalyserWindowMs } from "./computeAnalyserWindowMs";
 import { PlaybackClock } from "./PlaybackClock";
 import { audioVisualizationCanvasStyles } from "./Player.styles";
 import { AUDIO_ANALYSER_FFT_SIZE } from "./Player.types";
@@ -450,7 +451,7 @@ export const Player: FC = () => {
         setAudioVisualization(
           videoTracks[0]
             ? AudioVisualization.Off
-            : AudioVisualization.WaveformRealTime,
+            : AudioVisualization.FrequencyRealTime,
         );
         setCurrentAudioSink(audioSink);
         setCurrentVideoSink(videoSink);
@@ -568,19 +569,31 @@ export const Player: FC = () => {
         }
 
         if (
-          audioVisualizationRef.current ===
-            AudioVisualization.WaveformRealTime &&
+          (audioVisualizationRef.current ===
+            AudioVisualization.WaveformRealTime ||
+            audioVisualizationRef.current ===
+              AudioVisualization.FrequencyRealTime) &&
           analyserNodeRef.current &&
           audioVisualizationCanvasRef.current
         ) {
-          const waveformCtx =
-            audioVisualizationCanvasRef.current.getContext("2d");
-          if (waveformCtx) {
-            drawAudioWaveform({
-              analyserNode: analyserNodeRef.current,
-              ctx: waveformCtx,
-              screenDimensions: screenDimensionsRef.current,
-            });
+          const vizCtx = audioVisualizationCanvasRef.current.getContext("2d");
+          if (vizCtx) {
+            if (
+              audioVisualizationRef.current ===
+              AudioVisualization.WaveformRealTime
+            ) {
+              drawAudioWaveform({
+                analyserNode: analyserNodeRef.current,
+                ctx: vizCtx,
+                screenDimensions: screenDimensionsRef.current,
+              });
+            } else {
+              drawAudioFrequencyBars({
+                analyserNode: analyserNodeRef.current,
+                ctx: vizCtx,
+                screenDimensions: screenDimensionsRef.current,
+              });
+            }
           }
         }
 
@@ -625,7 +638,8 @@ export const Player: FC = () => {
   // Update playback message when audio visualization mode changes.
   useEffect(() => {
     if (
-      audioVisualization === AudioVisualization.WaveformRealTime &&
+      (audioVisualization === AudioVisualization.WaveformRealTime ||
+        audioVisualization === AudioVisualization.FrequencyRealTime) &&
       analyserNodeWindow
     ) {
       setPlaybackMessage(`Time window: ${analyserNodeWindow} ms`);
