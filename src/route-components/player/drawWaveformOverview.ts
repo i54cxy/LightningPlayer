@@ -48,10 +48,7 @@ export const drawWaveformOverview = ({
     // Only iterate the columns that fall within the visible window.
     const windowStart = currentTime - windowSec / 2;
     const windowEnd = currentTime + windowSec / 2;
-    const firstCol = Math.max(
-      0,
-      Math.floor(windowStart * COLUMNS_PER_SECOND),
-    );
+    const firstCol = Math.max(0, Math.floor(windowStart * COLUMNS_PER_SECOND));
     const lastCol = Math.min(
       waveformData.length - 1,
       Math.ceil(windowEnd * COLUMNS_PER_SECOND),
@@ -63,9 +60,9 @@ export const drawWaveformOverview = ({
     // Vertical gradient: red at the top and bottom edges (peak amplitude),
     // white at the centre line (silence) — matching the real-time waveform.
     const gradient = ctx.createLinearGradient(0, 0, 0, height);
-    gradient.addColorStop(0, "rgba(239, 68, 68, 0.9)");    // red-500   (top)
+    gradient.addColorStop(0, "rgba(239, 68, 68, 0.9)"); // red-500   (top)
     gradient.addColorStop(0.5, "rgba(255, 255, 255, 0.9)"); // white     (centre)
-    gradient.addColorStop(1, "rgba(239, 68, 68, 0.9)");    // red-500   (bottom)
+    gradient.addColorStop(1, "rgba(239, 68, 68, 0.9)"); // red-500   (bottom)
     ctx.fillStyle = gradient;
 
     for (let col = firstCol; col <= lastCol; col++) {
@@ -92,7 +89,7 @@ export const drawWaveformOverview = ({
   ctx.strokeStyle = "rgba(255, 255, 255, 0.9)";
   ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.moveTo(width / 2, 0);
-  ctx.lineTo(width / 2, height);
+  ctx.moveTo(width / 2, height * 0.1);
+  ctx.lineTo(width / 2, height * 0.9);
   ctx.stroke();
 };

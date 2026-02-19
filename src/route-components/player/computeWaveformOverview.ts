@@ -48,7 +48,7 @@ export const computeWaveformOverview = async ({
         for (let i = 0; i < channelData.length; i++) {
           const sampleTime = timestamp + i / buffer.sampleRate;
           const col = Math.floor(sampleTime * COLUMNS_PER_SECOND);
-          if (peaks[col] && col >= 0 && col < columnCount) {
+          if (peaks[col] !== undefined && col >= 0 && col < columnCount) {
             peaks[col] = Math.max(peaks[col], Math.abs(channelData[i]!));
           }
         }

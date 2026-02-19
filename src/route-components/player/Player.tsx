@@ -33,8 +33,8 @@ import { computeAnalyserWindowMs } from "./computeAnalyserWindowMs";
 import { computeWaveformOverview } from "./computeWaveformOverview";
 import { drawAudioFrequencyBars } from "./drawAudioFrequencyBars";
 import { drawAudioWaveform } from "./drawAudioWaveform";
-import { drawWaveformOverview } from "./drawWaveformOverview";
 import { drawVideoFrame } from "./drawVideoFrame";
+import { drawWaveformOverview } from "./drawWaveformOverview";
 import { getThumbnail } from "./getThumbnail";
 import { PlaybackClock } from "./PlaybackClock";
 import { audioVisualizationCanvasStyles } from "./Player.styles";
@@ -93,7 +93,7 @@ export const Player: FC = () => {
 
   // Whether the current file has video tracks.
   const [hasVideo, setHasVideo] = useState(false);
-  // For waveform audio visualization.
+  // For real-time audio visualization.
   const [analyserNodeWindow, setAnalyserNodeWindow] = useState<
     number | undefined
   >(undefined);
@@ -114,7 +114,11 @@ export const Player: FC = () => {
   // Ref to the audio visualization canvas, rendered on top of the video canvas.
   const audioVisualizationCanvasRef = useRef<HTMLCanvasElement>(null);
   // Precomputed whole-file peak data for the OverviewWaveform visualization.
-  const waveformOverviewRef = useRef<Float32Array>(undefined);
+  // State used to trigger re-render when the data is ready, ref used for access in render loop.
+  const [waveformOverviewData, setWaveformOverviewData] = useState<
+    Float32Array | undefined
+  >(undefined);
+  const waveformOverviewDataRef = useRef<Float32Array>(undefined);
   // Window size in seconds for the OverviewWaveform visualization.
   const [waveformOverviewWindowSec, setWaveformOverviewWindowSec] = useState(
     WAVEFORM_OVERVIEW_WINDOW_SEC,
@@ -465,19 +469,18 @@ export const Player: FC = () => {
         setAnalyserNodeWindow(computeAnalyserWindowMs(analyserNode));
 
         // Kick off whole-file peak computation in the background.
-        waveformOverviewRef.current = undefined;
+        waveformOverviewDataRef.current = undefined;
         if (audioTracks[0]) {
           computeWaveformOverview({
             audioTrack: audioTracks[0],
             duration,
             isCancelled: () => cancelled,
-          })
-            .then((data) => {
-              if (data) {
-                waveformOverviewRef.current = data;
-              }
-            })
-            .catch(console.error);
+          }).then((waveFormOverviewData) => {
+            if (!cancelled) {
+              waveformOverviewDataRef.current = waveFormOverviewData;
+              setWaveformOverviewData(waveFormOverviewData);
+            }
+          });
         }
 
         setAudioTracks(audioTracks);
@@ -540,7 +543,12 @@ export const Player: FC = () => {
         return;
       }
 
-      if (!canvasRef.current) {
+      if (!analyserNodeRef.current) {
+        console.log("render: analyserNode not ready.");
+        return;
+      }
+
+      if (!canvasRef.current || !audioVisualizationCanvasRef.current) {
         console.log("render: canvas not ready.");
         return;
       }
@@ -548,6 +556,12 @@ export const Player: FC = () => {
       const ctx = canvasRef.current.getContext("2d");
       if (!ctx) {
         console.log("render: no canvas context.");
+        return;
+      }
+
+      const vizCtx = audioVisualizationCanvasRef.current.getContext("2d");
+      if (!vizCtx) {
+        console.log("render: no audio visualization canvas context.");
         return;
       }
 
@@ -601,48 +615,32 @@ export const Player: FC = () => {
           });
         }
 
-        if (
-          (audioVisualizationRef.current ===
-            AudioVisualization.WaveformRealTime ||
-            audioVisualizationRef.current ===
-              AudioVisualization.FrequencyRealTime) &&
-          analyserNodeRef.current &&
-          audioVisualizationCanvasRef.current
-        ) {
-          const vizCtx = audioVisualizationCanvasRef.current.getContext("2d");
-          if (vizCtx) {
-            if (
-              audioVisualizationRef.current ===
-              AudioVisualization.WaveformRealTime
-            ) {
-              drawAudioWaveform({
-                analyserNode: analyserNodeRef.current,
-                ctx: vizCtx,
-                screenDimensions: screenDimensionsRef.current,
-              });
-            } else {
-              drawAudioFrequencyBars({
-                analyserNode: analyserNodeRef.current,
-                ctx: vizCtx,
-                screenDimensions: screenDimensionsRef.current,
-              });
-            }
+        switch (audioVisualizationRef.current) {
+          case AudioVisualization.WaveformRealTime: {
+            drawAudioWaveform({
+              analyserNode: analyserNodeRef.current,
+              ctx: vizCtx,
+              screenDimensions: screenDimensionsRef.current,
+            });
+            break;
           }
-        } else if (
-          audioVisualizationRef.current ===
-            AudioVisualization.OverviewWaveform &&
-          audioVisualizationCanvasRef.current
-        ) {
-          const vizCtx =
-            audioVisualizationCanvasRef.current.getContext("2d");
-          if (vizCtx) {
+          case AudioVisualization.FrequencyRealTime: {
+            drawAudioFrequencyBars({
+              analyserNode: analyserNodeRef.current,
+              ctx: vizCtx,
+              screenDimensions: screenDimensionsRef.current,
+            });
+            break;
+          }
+          case AudioVisualization.OverviewWaveform: {
             drawWaveformOverview({
               ctx: vizCtx,
               currentTime: playbackTime,
               screenDimensions: screenDimensionsRef.current,
-              waveformData: waveformOverviewRef.current,
+              waveformData: waveformOverviewDataRef.current,
               windowSec: waveformOverviewWindowSecRef.current,
             });
+            break;
           }
         }
 
@@ -693,7 +691,13 @@ export const Player: FC = () => {
     ) {
       setPlaybackMessage(`Time window: ${analyserNodeWindow} ms`);
     } else if (audioVisualization === AudioVisualization.OverviewWaveform) {
-      setPlaybackMessage(`Time window: ${waveformOverviewWindowSec} s`);
+      if (!waveformOverviewData) {
+        setPlaybackMessage("Computing waveform overview...");
+      } else {
+        setPlaybackMessage(
+          `Time window: ${waveformOverviewWindowSec}s. Press +/- to zoom in/out.`,
+        );
+      }
     } else {
       setPlaybackMessage(undefined);
     }
@@ -702,6 +706,7 @@ export const Player: FC = () => {
     analyserNodeWindow,
     setPlaybackMessage,
     waveformOverviewWindowSec,
+    waveformOverviewData,
   ]);
 
   // Keyboard handler for waveform overview window zoom (+/-).
@@ -710,9 +715,9 @@ export const Player: FC = () => {
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "-") {
-        setWaveformOverviewWindowSec((prev) => Math.max(1, prev / 2));
+        setWaveformOverviewWindowSec((prev) => (prev < 16 ? prev * 2 : prev));
       } else if (e.key === "+" || e.key === "=") {
-        setWaveformOverviewWindowSec((prev) => Math.min(3600, prev * 2));
+        setWaveformOverviewWindowSec((prev) => (prev > 1 ? prev / 2 : prev));
       }
     };
 
