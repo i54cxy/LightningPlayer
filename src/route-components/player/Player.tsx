@@ -86,6 +86,9 @@ export const Player: FC = () => {
     useRef<AsyncGenerator<WrappedCanvas, void, unknown>>(undefined);
   // Cache for pre-fetched thumbnails.
   const thumbnailCacheRef = useRef<PreviewThumbnailCache>(undefined);
+  // Video sink dedicated to thumbnail fetching. Kept separately so getThumbnail
+  // can fall back to a direct fetch when the cache is unavailable.
+  const thumbnailVideoSinkRef = useRef<CanvasSink>(undefined);
 
   // Total duration in seconds.
   // When duration is set, it also means that a file has finished loading.
@@ -161,6 +164,7 @@ export const Player: FC = () => {
     videoFrameIteratorRef.current?.return();
     // Dispose thumbnail cache.
     thumbnailCacheRef.current?.dispose();
+    thumbnailVideoSinkRef.current = undefined;
     // Clear the canvas.
     if (canvasRef.current) {
       const ctx = canvasRef.current?.getContext("2d");
@@ -455,6 +459,7 @@ export const Player: FC = () => {
         playbackClockRef.current = playbackClock;
 
         // Initialize thumbnail cache only if we have video.
+        thumbnailVideoSinkRef.current = thumbnailVideoSink;
         if (thumbnailVideoSink) {
           const thumbnailCache = new PreviewThumbnailCache({
             duration,
@@ -883,14 +888,10 @@ export const Player: FC = () => {
    */
   const getThumbnailCallback = useCallback(
     async (timestamp: number) => {
-      if (!thumbnailCacheRef.current) {
-        console.error(`getThumbnailCallback: no thumbnailCache.`);
-        return;
-      }
-
       return await getThumbnail({
         thumbnailCache: thumbnailCacheRef.current,
         timestamp,
+        videoSink: thumbnailVideoSinkRef.current,
       });
     },
 
