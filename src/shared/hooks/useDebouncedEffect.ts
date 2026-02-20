@@ -19,7 +19,6 @@ export interface IDebouncedEffectCallbackParams {
  * should always read into the parameter to get the latest value.
  * @param delay - Debounce delay in milliseconds.
  */
-// TODO: not used.
 export const useDebouncedEffect = (
   callback: (state: IDebouncedEffectCallbackParams) => void,
   delay: number,

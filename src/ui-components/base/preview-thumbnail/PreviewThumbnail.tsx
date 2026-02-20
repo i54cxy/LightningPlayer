@@ -1,4 +1,8 @@
-import { FC, useEffect, useRef, useState } from "react";
+import { FC, useCallback, useRef, useState } from "react";
+import {
+  IDebouncedEffectCallbackParams,
+  useDebouncedEffect,
+} from "../../../shared/hooks/useDebouncedEffect";
 import { formatTimestamp } from "../../../shared/utils/formatTimestamp";
 import { Tooltip } from "../tooltip/Tooltip";
 import {
@@ -12,7 +16,7 @@ import {
 
 export interface IPreviewThumbnailProps {
   /**
-   * Fetches thumbnail URL for timestamp. Returns cached URL immediately if available.
+   * Fetches thumbnail URL for timestamp. Returns cached URL immediately if available. Can be expensive.
    *
    * @param timestamp in seconds.
    */
@@ -22,6 +26,8 @@ export interface IPreviewThumbnailProps {
    */
   timestamp: number;
 }
+
+const THUMBNAIL_DEBOUNCE_MS = 100;
 
 export const PreviewThumbnail: FC<IPreviewThumbnailProps> = ({
   getThumbnail,
@@ -35,34 +41,35 @@ export const PreviewThumbnail: FC<IPreviewThumbnailProps> = ({
   >(undefined);
   const roundedTimestamp = Math.round(timestamp);
 
-  // Fetch thumbnail when timestamp changes.
-  useEffect(() => {
-    let cancelled = false;
-    const fetch = async () => {
-      if (cancelled) {
-        return;
-      }
+  // Fetch thumbnail when timestamp changes, debounced so only the last
+  // request in a rapid sequence actually triggers a fetch.
+  const fetchThumbnail = useCallback(
+    ({ cancelled }: IDebouncedEffectCallbackParams) => {
+      const fetch = async () => {
+        if (cancelled) {
+          return;
+        }
 
-      const url = await getThumbnail(roundedTimestamp);
+        const url = await getThumbnail(roundedTimestamp);
 
-      if (cancelled) {
-        return;
-      }
+        if (cancelled) {
+          return;
+        }
 
-      if (url && imgRef.current) {
-        // Update img src imperatively - no React state delay.
-        imgRef.current.src = url;
-        imgRef.current.onload = () => {
-          setCurrentThumbnailTimestamp(roundedTimestamp);
-        };
-      }
-    };
-    fetch();
+        if (url && imgRef.current) {
+          // Update img src imperatively - no React state delay.
+          imgRef.current.src = url;
+          imgRef.current.onload = () => {
+            setCurrentThumbnailTimestamp(roundedTimestamp);
+          };
+        }
+      };
+      fetch();
+    },
+    [getThumbnail, roundedTimestamp],
+  );
 
-    return () => {
-      cancelled = true;
-    };
-  }, [getThumbnail, roundedTimestamp]);
+  useDebouncedEffect(fetchThumbnail, THUMBNAIL_DEBOUNCE_MS);
 
   const handleError = () => {
     setCurrentThumbnailTimestamp(undefined);
