@@ -163,6 +163,7 @@ The visualization canvas (`audioVisualizationCanvasRef`) is a separate full-scre
 
 - `WaveformRealTime` — oscilloscope drawn by `drawAudioWaveform` (`src/route-components/player/drawAudioWaveform.ts`). Uses `getByteTimeDomainData`. Stroke is a vertical gradient: red at the top and bottom edges (peak amplitude) transitioning to blue at the centre line (silence).
 - `FrequencyRealTime` — spectrum analyser drawn by `drawAudioFrequencyBars` (`src/route-components/player/drawAudioFrequencyBars.ts`). Uses `getByteFrequencyData`. 80 bars mapped on a logarithmic frequency scale (20 Hz–Nyquist). Bar height is capped at 90% of canvas height. Fill is a vertical gradient: blue at the bottom (quiet) → violet → orange-red at the top (loud).
+- `OverviewWaveform` — full-file scrolling waveform drawn by `drawWaveformOverview` (`src/route-components/player/drawWaveformOverview.ts`). See "Waveform overview" section below.
 - `Off` — canvas is hidden.
 
 **AnalyserNode pipeline:**
@@ -177,7 +178,31 @@ AudioBufferSourceNode → GainNode → AnalyserNode → AudioContext.destination
 
 **Auto-selection on file load:** Audio-only files default to `FrequencyRealTime`; files with video tracks default to `Off`.
 
-**Menu:** `PlaybackSettingsAudioVisualizationMenu` (`src/ui-components/base/playback-settings/PlaybackSettingsAudioVisualizationMenu.tsx`) lists the two active modes, then a separator, then `Off` in its own section at the bottom.
+**Menu:** `PlaybackSettingsAudioVisualizationMenu` (`src/ui-components/base/playback-settings/PlaybackSettingsAudioVisualizationMenu.tsx`) lists the three active modes, then a separator, then `Off` in its own section at the bottom.
+
+##### Waveform overview
+
+Provides a full-file amplitude overview that scrolls beneath a fixed playhead at the horizontal centre of the canvas.
+
+**Data computation (`computeWaveformOverview` in `src/route-components/player/computeWaveformOverview.ts`):**
+
+- On file load, asynchronously iterates all decoded audio buffers from an `AudioBufferSink`.
+- Computes peak absolute amplitude per column across all channels.
+- Resolution: `COLUMNS_PER_SECOND` (100) — each column represents a 10 ms time slice.
+- Returns a `Float32Array` of normalised amplitude values (0–1), or `undefined` if cancelled.
+- Cancellation is checked between buffers via an `isCancelled` callback to support file-switch abort.
+
+**Rendering (`drawWaveformOverview` in `src/route-components/player/drawWaveformOverview.ts`):**
+
+- Playhead is fixed at the horizontal centre; the waveform scrolls as playback progresses.
+- Visible window spans `currentTime ± windowSec / 2`. Out-of-bounds regions are left empty.
+- Bar height capped at 80 % of half-canvas height. Fill is a vertical gradient: red at top/bottom edges → white at centre.
+- Playhead drawn as a 2 px white vertical line at 10–90 % canvas height.
+- While data is computing, draws a thin 2 px semi-transparent horizontal centre line as a loading indicator.
+
+**Zoom:** `+`/`-` keys halve/double the visible window (`waveformOverviewWindowSec`). Range: 1 s – 16 s. Default: `WAVEFORM_OVERVIEW_WINDOW_SEC` (16 s, defined in `Player.types.ts`).
+
+**Playback messages:** Shows `"Computing waveform overview..."` while data is generating, then `"Time window: Xs. Press +/- to zoom in/out."` when ready.
 
 #### Imperative DOM updates
 
