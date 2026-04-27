@@ -37,6 +37,7 @@ import { drawVideoFrame } from "./drawVideoFrame";
 import { drawWaveformOverview } from "./drawWaveformOverview";
 import { getThumbnail } from "./getThumbnail";
 import { PlaybackClock } from "./PlaybackClock";
+import { probeDecodePerformance } from "./probeDecodePerformance";
 import { audioVisualizationCanvasStyles } from "./Player.styles";
 import {
   AUDIO_ANALYSER_FFT_SIZE,
@@ -96,6 +97,11 @@ export const Player: FC = () => {
 
   // Whether the current file has video tracks.
   const [hasVideo, setHasVideo] = useState(false);
+  // Whether preview thumbnails are enabled. Set to true only after the decode
+  // performance probe reports the file is fast enough; gates both the cache
+  // construction and the PreviewThumbnail UI.
+  const [arePreviewThumbnailsEnabled, setArePreviewThumbnailsEnabled] =
+    useState(false);
   // For real-time audio visualization.
   const [analyserNodeWindow, setAnalyserNodeWindow] = useState<
     number | undefined
@@ -347,6 +353,10 @@ export const Player: FC = () => {
     console.log("file:", currentPlayingFile);
 
     const loadFile = async () => {
+      // Reset to default state at the start of every load. The probe will
+      // re-enable thumbnails only if the verdict is "fast".
+      setArePreviewThumbnailsEnabled(false);
+
       if (!currentPlayingFile) {
         // No file (e.g., after Ctrl+R reload). Clean up and reset state.
         cleanupPlayback();
@@ -458,17 +468,29 @@ export const Player: FC = () => {
         const playbackClock = new PlaybackClock(audioContext);
         playbackClockRef.current = playbackClock;
 
-        // Initialize thumbnail cache only if we have video.
+        // Initialize thumbnail cache only if we have video AND the decode
+        // performance probe says the file is fast enough. The probe runs in a
+        // Web Worker so a runaway decode does not freeze the UI; if any single
+        // sample exceeds the threshold the worker is terminated.
         thumbnailVideoSinkRef.current = thumbnailVideoSink;
-        if (thumbnailVideoSink) {
-          const thumbnailCache = new PreviewThumbnailCache({
+        thumbnailCacheRef.current = undefined;
+        if (thumbnailVideoSink && videoTracks[0]) {
+          const canSeekInRealTime = await probeDecodePerformance({
+            blob: currentPlayingFile,
             duration,
-            videoSink: thumbnailVideoSink,
+            isCancelled: () => cancelled,
+            videoTrackIndex: allTracks.indexOf(videoTracks[0]),
           });
-          thumbnailCacheRef.current = thumbnailCache;
-          // thumbnailCache.startAutoFill();
-        } else {
-          thumbnailCacheRef.current = undefined;
+          if (cancelled) return;
+          if (canSeekInRealTime) {
+            const thumbnailCache = new PreviewThumbnailCache({
+              duration,
+              videoSink: thumbnailVideoSink,
+            });
+            thumbnailCacheRef.current = thumbnailCache;
+            setArePreviewThumbnailsEnabled(true);
+            // thumbnailCache.startAutoFill();
+          }
         }
 
         setAnalyserNodeWindow(computeAnalyserWindowMs(analyserNode));
@@ -910,6 +932,7 @@ export const Player: FC = () => {
 
       {currentPlayingFile && (
         <PlayerControlOverlay
+          arePreviewThumbnailsEnabled={arePreviewThumbnailsEnabled}
           audioTracks={audioTracks}
           duration={duration ?? 0}
           fullscreenContainerRef={fullscreenContainerRef}

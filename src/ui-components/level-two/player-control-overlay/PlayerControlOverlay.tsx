@@ -58,6 +58,11 @@ export interface IPlayerControlOverlayProps {
   /** The list of available audio tracks. */
   audioTracks: InputAudioTrack[];
   /**
+   * Whether preview thumbnails should be rendered. False when the decode
+   * performance probe reports the file is too slow to decode in real time.
+   */
+  arePreviewThumbnailsEnabled: boolean;
+  /**
    * Duration in seconds.
    */
   duration: number;
@@ -114,6 +119,7 @@ export interface IPlayerControlOverlayProps {
 }
 
 export const PlayerControlOverlay: FC<IPlayerControlOverlayProps> = ({
+  arePreviewThumbnailsEnabled,
   audioTracks,
   duration,
   fullscreenContainerRef,
@@ -433,8 +439,9 @@ export const PlayerControlOverlay: FC<IPlayerControlOverlayProps> = ({
           onMouseLeave={handleOnMouseLeaveProgressBar}
           ref={progressBarContainerRef}
         >
-          {/* Preview thumbnail - only for files with video. */}
-          {hasVideo && (
+          {/* Preview thumbnail - only for files with video and when the
+              decode-performance probe says the file is fast enough. */}
+          {hasVideo && arePreviewThumbnailsEnabled && (
             <div
               css={[
                 previewThumbnailContainerStyles,
