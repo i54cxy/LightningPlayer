@@ -96,6 +96,11 @@ export class DecodeWorkerManager {
       });
     });
 
+    // On timeout, kill the stuck worker and spin up a fresh one re-loaded to
+    // the same file. This is safe as long as the canvas has not been
+    // transferred yet (i.e. startPlayback hasn't been called). If it has,
+    // the new worker will lack the OffscreenCanvas and video rendering will
+    // no-op until the Player is remounted.
     if (result.aborted && this.lastLoadFileParams) {
       this.worker.terminate();
       this.worker = this.spawnWorker();

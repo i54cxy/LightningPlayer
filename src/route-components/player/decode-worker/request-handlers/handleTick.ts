@@ -9,6 +9,8 @@ import { workerState } from "../workerState";
 
 declare const self: DedicatedWorkerGlobalScope;
 
+// Processes at most one frame per call. The main thread drives this via
+// requestAnimationFrame ticks so we never run ahead of vsync.
 export const handleTick = async ({
   currentTime,
 }: Extract<

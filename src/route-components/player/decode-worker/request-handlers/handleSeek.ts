@@ -30,6 +30,8 @@ export const handleSeek = async ({
   }
 
   try {
+    // Prefetch two frames: draw the first immediately so the user sees the
+    // seek position, then buffer the second in nextFrame for handleTick.
     const iterator = videoSink.canvases(time);
     const firstResult = await iterator.next();
     if (localAsyncId !== playbackState.asyncId) {

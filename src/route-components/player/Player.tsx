@@ -88,15 +88,17 @@ export const Player: FC = () => {
   const thumbnailVideoSinkRef = useRef<CanvasSink>(undefined);
 
   // Total duration in seconds.
-  // When duration is set, it also means that a file has finished loading.
   const [duration, setDuration] = useState<number | undefined>(undefined);
 
   // Whether the current file has video tracks.
   const [hasVideo, setHasVideo] = useState(false);
-  // Whether preview thumbnails are enabled. Set to true only after the decode
-  // performance probe reports the file is fast enough; gates both the cache
-  // construction and the PreviewThumbnail UI.
-  const [arePreviewThumbnailsEnabled, setArePreviewThumbnailsEnabled] =
+  // Whether the file-load sequence (track discovery, decode probe, canvas
+  // transfer) has finished. Controls PlayerControlOverlay visibility.
+  const [isFileLoaded, setIsFileLoaded] = useState(false);
+  // Whether the decode performance probe reports the file can be decoded
+  // fast enough for real-time seeking. Gates the thumbnail cache and the
+  // PreviewThumbnail UI.
+  const [canSeekInRealTime, setCanSeekInRealTime] =
     useState(false);
   // For real-time audio visualization.
   const [analyserNodeWindow, setAnalyserNodeWindow] = useState<
@@ -327,16 +329,17 @@ export const Player: FC = () => {
     console.log("file:", currentPlayingFile);
 
     const loadFile = async () => {
-      // Reset to default state at the start of every load. Setting duration
-      // to undefined hides the player control overlay until loading finishes.
-      setArePreviewThumbnailsEnabled(false);
-      setDuration(undefined);
+      // Unmount PlayerControlOverlay immediately so the user cannot interact
+      // with stale controls while the async load sequence runs.
+      setIsFileLoaded(false);
 
       if (!currentPlayingFile) {
         // No file (e.g., after Ctrl+R reload). Clean up and reset state.
         cleanupPlayback();
         thumbnailCacheRef.current = undefined;
+        setCanSeekInRealTime(false);
         setCurrentAudioSink(undefined);
+        setDuration(undefined);
         setHasVideo(false);
         setIsPlaying(false);
         return;
@@ -436,6 +439,7 @@ export const Player: FC = () => {
         // playback session.
         thumbnailVideoSinkRef.current = thumbnailVideoSink;
         thumbnailCacheRef.current = undefined;
+        let fileCanSeekInRealTime = false;
         if (
           videoTracks[0] &&
           canvasRef.current &&
@@ -451,20 +455,22 @@ export const Player: FC = () => {
           });
           if (cancelled) return;
 
+          // Probe before startPlayback: probing may time out and restart the
+          // worker; that restart is safe here because the canvas hasn't been
+          // transferred yet (startPlayback is below).
           if (thumbnailVideoSink) {
-            const canSeekInRealTime = await getCanSeekInRealTime({
+            fileCanSeekInRealTime = await getCanSeekInRealTime({
               decodeWorkerManager: decodeManagerRef.current,
               duration,
               isCancelled: () => cancelled,
             });
             if (cancelled) return;
 
-            if (canSeekInRealTime) {
+            if (fileCanSeekInRealTime) {
               thumbnailCacheRef.current = new PreviewThumbnailCache({
                 duration,
                 videoSink: thumbnailVideoSink,
               });
-              setArePreviewThumbnailsEnabled(true);
               // thumbnailCacheRef.current.startAutoFill();
             }
           }
@@ -483,8 +489,6 @@ export const Player: FC = () => {
           if (cancelled) return;
         }
 
-        setAnalyserNodeWindow(computeAnalyserWindowMs(analyserNode));
-
         // Kick off whole-file peak computation in the background.
         waveformOverviewDataRef.current = undefined;
         if (audioTracks[0]) {
@@ -500,28 +504,31 @@ export const Player: FC = () => {
           });
         }
 
+        // Open the playback iterator and draw the first frame at t=0.
+        if (videoTracks[0]) {
+          decodeManagerRef.current?.seek(0);
+        }
+
+        // Batch all state updates. React 18+ batches these into a single
+        // render even inside async functions.
+        setAnalyserNodeWindow(computeAnalyserWindowMs(analyserNode));
         setAudioTracks(audioTracks);
         setAudioVisualization(
           videoTracks[0]
             ? AudioVisualization.Off
             : AudioVisualization.FrequencyRealTime,
         );
+        setCanSeekInRealTime(fileCanSeekInRealTime);
         setCurrentAudioSink(audioSink);
         setDuration(duration);
-        setHasVideo(!!videoTracks[0]);
-        setSelectedAudioTrackIndex(0);
-
-        // Reset playback settings when loading a new file.
         setFlipHorizontal(false);
         setFlipVertical(false);
+        setHasVideo(!!videoTracks[0]);
+        setIsFileLoaded(true);
         setIsPlaying(false);
         setPlaybackSpeed(1);
         setRotation(0);
-
-        // Open the playback iterator and draw the first frame at t=0.
-        if (videoTracks[0]) {
-          decodeManagerRef.current?.seek(0);
-        }
+        setSelectedAudioTrackIndex(0);
       }
     };
 
@@ -877,9 +884,9 @@ export const Player: FC = () => {
       />
       <PlaybackMessage />
 
-      {currentPlayingFile && duration !== undefined && (
+      {currentPlayingFile && isFileLoaded && (
         <PlayerControlOverlay
-          arePreviewThumbnailsEnabled={arePreviewThumbnailsEnabled}
+          canSeekInRealTime={canSeekInRealTime}
           audioTracks={audioTracks}
           duration={duration ?? 0}
           fullscreenContainerRef={fullscreenContainerRef}

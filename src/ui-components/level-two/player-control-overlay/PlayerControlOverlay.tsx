@@ -61,7 +61,7 @@ export interface IPlayerControlOverlayProps {
    * Whether preview thumbnails should be rendered. False when the decode
    * performance probe reports the file is too slow to decode in real time.
    */
-  arePreviewThumbnailsEnabled: boolean;
+  canSeekInRealTime: boolean;
   /**
    * Duration in seconds.
    */
@@ -119,7 +119,7 @@ export interface IPlayerControlOverlayProps {
 }
 
 export const PlayerControlOverlay: FC<IPlayerControlOverlayProps> = ({
-  arePreviewThumbnailsEnabled,
+  canSeekInRealTime,
   audioTracks,
   duration,
   fullscreenContainerRef,
@@ -441,7 +441,7 @@ export const PlayerControlOverlay: FC<IPlayerControlOverlayProps> = ({
         >
           {/* Preview thumbnail - only for files with video and when the
               decode-performance probe says the file is fast enough. */}
-          {hasVideo && arePreviewThumbnailsEnabled && (
+          {hasVideo && canSeekInRealTime && (
             <div
               css={[
                 previewThumbnailContainerStyles,
