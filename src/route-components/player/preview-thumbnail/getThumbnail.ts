@@ -1,5 +1,5 @@
 import { CanvasSink } from "mediabunny";
-import { formatTimestamp } from "../../shared/utils/formatTimestamp";
+import { formatTimestamp } from "../../../shared/utils/formatTimestamp";
 import { canvasToThumbnailBlob } from "./canvasToBlob";
 import { PreviewThumbnailCache } from "./PreviewThumbnailCache";
 

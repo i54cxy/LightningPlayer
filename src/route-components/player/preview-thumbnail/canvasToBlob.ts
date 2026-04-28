@@ -1,7 +1,7 @@
 import {
   previewThumbnailHeight,
   previewThumbnailWidth,
-} from "../../ui-components/base/preview-thumbnail/PreviewThumbnail.styles";
+} from "../../../ui-components/base/preview-thumbnail/PreviewThumbnail.styles";
 
 /** JPEG quality for thumbnails (0-1). */
 const THUMBNAIL_QUALITY = 0.8;

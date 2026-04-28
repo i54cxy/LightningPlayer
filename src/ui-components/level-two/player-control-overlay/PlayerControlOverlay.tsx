@@ -14,7 +14,7 @@ import HeadphonesSoundWaveIcon from "../../../assets/svgs/headphones-sound-wave.
 import PauseIcon from "../../../assets/svgs/pause.svg?react";
 import PlayIcon from "../../../assets/svgs/play.svg?react";
 import SettingsIcon from "../../../assets/svgs/setting.svg?react";
-import { updateProgressBarDOM } from "../../../route-components/player/updateProgressBarDOM";
+import { updateProgressBarDOM } from "../../../route-components/player/dom-updates/updateProgressBarDOM";
 import { useDimensions } from "../../../shared/hooks/useDimensions";
 import { AudioTrackSelector } from "../../base/audio-track-selector/AudioTrackSelector";
 import { PlaybackSettings } from "../../base/playback-settings/PlaybackSettings";
@@ -112,7 +112,7 @@ export interface IPlayerControlOverlayProps {
   /**
    * Time in seconds.
    */
-  seek(time: number): Promise<void>;
+  seek(time: number): void;
   /** The index of the currently selected audio track. */
   selectedAudioTrackIndex: number;
   volume: number;

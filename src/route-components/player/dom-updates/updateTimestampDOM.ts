@@ -1,5 +1,5 @@
-import { formatTimestamp } from "../../shared/utils/formatTimestamp";
-import { timestampTextId } from "../../ui-components/base/timestamp/Timestamp";
+import { formatTimestamp } from "../../../shared/utils/formatTimestamp";
+import { timestampTextId } from "../../../ui-components/base/timestamp/Timestamp";
 
 /**
  * Imperatively updates the timestamp text to avoid React re-renders.

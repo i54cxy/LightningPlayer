@@ -1,4 +1,4 @@
-import { IDimensions } from "../../shared/types/dimensions";
+import { IDimensions } from "../../../shared/types/dimensions";
 
 /** Number of frequency bars to render. */
 const BAR_COUNT = 80;

@@ -1,5 +1,5 @@
 import { WrappedAudioBuffer } from "mediabunny";
-import { PlaybackClock } from "./PlaybackClock";
+import { PlaybackClock } from "../PlaybackClock";
 import { timeStretchBuffer } from "./timeStretchBuffer";
 
 /**

@@ -1,4 +1,4 @@
-import { IDimensions } from "../../shared/types/dimensions";
+import { IDimensions } from "../../../shared/types/dimensions";
 
 /**
  * Draws an oscilloscope-style waveform visualization onto the canvas.
