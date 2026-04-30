@@ -16,7 +16,7 @@ Lightning Player is a Tauri v2 desktop media player built with:
 
 ```powershell
 pnpm tauri dev     # Development (Vite + Tauri together)
-pnpm dev           # Frontend only (Vite at localhost:1420)
+pnpm dev           # Frontend only (Vite at localhost:3420)
 pnpm build         # Build frontend (tsc + vite build)
 pnpm tauri build   # Production build
 pnpm lint          # ESLint
@@ -53,7 +53,8 @@ pnpm lint          # ESLint
 UI components in `src/ui-components/`:
 
 - `base/` - Primitives (Button, TitleBar, ResizableWindow, FullscreenContainer)
-- `level-one/` - Composed components (PlayerControlOverlay)
+- `level-one/` - Composed components (VolumeControl, TitleBar)
+- `level-two/` - Higher-order composed components (PlayerControlOverlay)
 - Each level imports from components from lower levels, and not the other way around.
 
 ### Updating Theme
@@ -113,11 +114,15 @@ Supports both video and audio-only playback using mediabunny for decoding and We
 1. Creates `Input` from file blob with `BlobSource`.
 2. Gets all tracks via `getTracks()`, filters by `canDecode()`, then separates into video and audio tracks.
 3. If no decodable tracks exist, throws an error (current playback is preserved).
-4. Creates `CanvasSink` for video frames (only when video tracks exist) and `AudioBufferSink` for audio buffers.
+4. Creates `DecodeWorkerManager` for video decoding in a Web Worker (only when video tracks exist) and `AudioBufferSink` for audio buffers. Thumbnail decoding also runs in the worker via the `GetThumbnail` RPC.
 5. Audio: Schedules `AudioBufferSourceNode` instances via `runAudioIterator`.
-6. Video: Renders frames to canvas via `requestAnimationFrame` loop.
+6. Video: The decode worker renders frames to an `OffscreenCanvas` (transferred from the main thread on the first file load). The main thread drives the worker via `tick(currentTime)` calls on every `requestAnimationFrame`.
 
-A `hasVideo` state tracks whether the current file has video tracks. When `false`: `CanvasSink`, thumbnail cache, and `startVideoIterator` are skipped; `seekImpl` updates only the clock and progress bar; duration is computed from the selected audio track (and recomputed on audio track switch); preview thumbnails and flip/rotate settings are hidden in the UI.
+A `hasVideo` state tracks whether the current file has video tracks. When `false`: the decode worker, thumbnail cache, and preview thumbnails are skipped; `seekImpl` updates only the clock and progress bar; duration is computed from the selected audio track (and recomputed on audio track switch); preview thumbnails and flip/rotate settings are hidden in the UI.
+
+An `isFileLoaded` state controls `PlayerControlOverlay` visibility. It is set to `false` at the start of every load (unmounting the overlay so the user cannot interact with stale controls) and to `true` in the final state-update batch after all async work completes.
+
+A `canSeekInRealTime` state gates preview thumbnail UI. It is set to `true` only after a decode performance probe (`getCanSeekInRealTime`) confirms the file can decode frames quickly enough for interactive seeking.
 
 #### PlaybackClock (`src/route-components/player/PlaybackClock.ts`)
 
@@ -129,19 +134,36 @@ Manages playback timing using `AudioContext` as the master clock for A/V sync:
 
 Both audio and video playback rely on `PlaybackClock.currentTime` to achieve synchronized play, pause, and seek.
 
+#### Decode worker (`src/route-components/player/decode-worker/`)
+
+Video decoding and rendering runs in a dedicated Web Worker to keep the main thread free for UI interaction.
+
+**DecodeWorkerManager (`DecodeWorkerManager.ts`)**: Main-thread wrapper. Constructed once per Player mount, reused across files. Key methods:
+
+- `loadFile(blob, videoTrackIndex)` — opens the file in the worker, constructs a playback `CanvasSink` (with `poolSize: 2`) and a separate `thumbnailSink` for thumbnail decoding.
+- `probe(timestamp, timeoutMs)` — decodes a single frame and returns wall-clock duration. If the decode exceeds the timeout, the hung worker is terminated and a fresh one is transparently spun up re-loaded to the same file. Rejects all pending thumbnail requests before terminating.
+- `getThumbnail(timestamp)` — decodes a single frame at the given timestamp using the `thumbnailSink`, resizes to thumbnail dimensions via `OffscreenCanvas`, encodes to JPEG, and returns the blob. Concurrent requests are correlated by `requestId`.
+- `startPlayback(canvasElement, drawParams)` — first call only: transfers the `<canvas>` to the worker via `transferControlToOffscreen()`. Subsequent calls are no-ops (the offscreen canvas cannot be re-transferred).
+- `seek(time)` — creates a new frame iterator at the given timestamp, draws the first frame, and buffers the second for tick-driven rendering.
+- `tick(currentTime)` — draws the buffered next frame if its timestamp has been reached and pre-fetches one more. Processes at most one frame per call.
+- `updateDrawParams(partial)` — merges flip/rotation/screen-dimension changes and re-draws the last frame.
+- `reset()` — clears the iterator and canvas pixels between files (the offscreen canvas + draw state persist).
+
+**workerState (`workerState.ts`)**: Module-level mutable state. `videoSink` and `thumbnailSink` are set per file, `playbackState` is set on the first `StartPlayback` and persists across files.
+
+**drawAndRecordFrame (`utils/drawAndRecordFrame.ts`)**: Draws a `WrappedCanvas` to the offscreen canvas with flip/rotation transforms and records it as `lastDrawnFrame` for later re-draws on transform/resize changes.
+
 #### Video playback
 
-**startVideoIterator (`src/route-components/player/startVideoIterator.ts`)**: Creates a new video frame iterator from `CanvasSink.canvases(time)`, fetches the first two frames, draws the first frame immediately, and stores the second in `nextFrameRef` for the render loop.
-
-**updateNextFrame (`src/route-components/player/updateNextFrame.ts`)**: Called by the render loop when it's time for the next frame. Iterates over the video frame iterator, drawing any frames whose timestamp has passed, and stores the first future frame in `nextFrameRef`. Uses `asyncIdRef` to detect stale async operations from previous seeks.
+The main-thread render loop calls `decodeManagerRef.current.tick(playbackTime)` on every `requestAnimationFrame`. The worker draws the buffered next frame if its timestamp has been reached and asynchronously pre-fetches the following frame. On seek, the worker creates a fresh iterator, draws the first frame immediately, and buffers the second.
 
 **Render loop** (in `Player.tsx`): A `requestAnimationFrame` loop that:
 
 1. Gets current playback time from `PlaybackClock.currentTime`.
-2. If `nextFrameRef.current.timestamp <= playbackTime`, draws it and calls `updateNextFrame`.
+2. Calls `decodeManagerRef.current.tick(playbackTime)` to drive the worker's frame rendering.
 3. Updates the progress bar and timestamp DOM imperatively via `updateProgressBarDOM` and `updateTimestampDOM`.
 
-#### Audio playback (`src/route-components/player/runAudioIterator.ts`)
+#### Audio playback (`src/route-components/player/audio/runAudioIterator.ts`)
 
 Schedules audio buffers using Web Audio API:
 
@@ -153,7 +175,7 @@ Schedules audio buffers using Web Audio API:
 4. Throttles when >1 second buffered ahead.
 5. Tracks scheduled nodes in `queuedAudioNodes` Set (added after `start()`, removed on `ended`).
 
-**Cleanup (`cleanupPlayback`):** Pauses the clock, clears `nextFrameRef`, stops all nodes in `queuedAudioNodes` via `node.stop()`, releases audio and video iterators via `.return()`, disposes the thumbnail cache, and clears the canvas.
+**Cleanup (`cleanupPlayback`):** Pauses the clock, stops all nodes in `queuedAudioNodes` via `node.stop()`, releases the audio iterator via `.return()`, disposes the thumbnail cache, and calls `decodeManagerRef.current.reset()` (which clears the worker's iterator + canvas pixels).
 
 #### Audio visualization
 
@@ -161,9 +183,9 @@ The visualization canvas (`audioVisualizationCanvasRef`) is a separate full-scre
 
 **Modes (`AudioVisualization` enum):**
 
-- `WaveformRealTime` — oscilloscope drawn by `drawAudioWaveform` (`src/route-components/player/drawAudioWaveform.ts`). Uses `getByteTimeDomainData`. Stroke is a vertical gradient: red at the top and bottom edges (peak amplitude) transitioning to blue at the centre line (silence).
-- `FrequencyRealTime` — spectrum analyser drawn by `drawAudioFrequencyBars` (`src/route-components/player/drawAudioFrequencyBars.ts`). Uses `getByteFrequencyData`. 80 bars mapped on a logarithmic frequency scale (20 Hz–Nyquist). Bar height is capped at 90% of canvas height. Fill is a vertical gradient: blue at the bottom (quiet) → violet → orange-red at the top (loud).
-- `OverviewWaveform` — full-file scrolling waveform drawn by `drawWaveformOverview` (`src/route-components/player/drawWaveformOverview.ts`). See "Waveform overview" section below.
+- `WaveformRealTime` — oscilloscope drawn by `drawAudioWaveform` (`src/route-components/player/audio-visualization/drawAudioWaveform.ts`). Uses `getByteTimeDomainData`. Stroke is a vertical gradient: red at the top and bottom edges (peak amplitude) transitioning to blue at the centre line (silence).
+- `FrequencyRealTime` — spectrum analyser drawn by `drawAudioFrequencyBars` (`src/route-components/player/audio-visualization/drawAudioFrequencyBars.ts`). Uses `getByteFrequencyData`. 80 bars mapped on a logarithmic frequency scale (20 Hz–Nyquist). Bar height is capped at 90% of canvas height. Fill is a vertical gradient: blue at the bottom (quiet) → violet → orange-red at the top (loud).
+- `OverviewWaveform` — full-file scrolling waveform drawn by `drawWaveformOverview` (`src/route-components/player/audio-visualization/drawWaveformOverview.ts`). See "Waveform overview" section below.
 - `Off` — canvas is hidden.
 
 **AnalyserNode pipeline:**
@@ -172,7 +194,7 @@ The visualization canvas (`audioVisualizationCanvasRef`) is a separate full-scre
 AudioBufferSourceNode → GainNode → AnalyserNode → AudioContext.destination
 ```
 
-`fftSize` is set to `AUDIO_ANALYSER_FFT_SIZE` (4096), giving `frequencyBinCount` = 2048 and a time window of ~93 ms at 44.1 kHz. The window duration is computed by `computeAnalyserWindowMs` (`src/route-components/player/computeAnalyserWindowMs.ts`) and displayed as a `PlaybackMessage` (`"Time window: X ms"`) while either visualization mode is active.
+`fftSize` is set to `AUDIO_ANALYSER_FFT_SIZE` (4096), giving `frequencyBinCount` = 2048 and a time window of ~93 ms at 44.1 kHz. The window duration is computed by `computeAnalyserWindowMs` (`src/route-components/player/audio-visualization/computeAnalyserWindowMs.ts`) and displayed as a `PlaybackMessage` (`"Time window: X ms"`) while either visualization mode is active.
 
 **Render loop:** Both draw functions are called on every `requestAnimationFrame` tick (same loop as video frame rendering) when the corresponding mode is active.
 
@@ -184,7 +206,7 @@ AudioBufferSourceNode → GainNode → AnalyserNode → AudioContext.destination
 
 Provides a full-file amplitude overview that scrolls beneath a fixed playhead at the horizontal centre of the canvas.
 
-**Data computation (`computeWaveformOverview` in `src/route-components/player/computeWaveformOverview.ts`):**
+**Data computation (`computeWaveformOverview` in `src/route-components/player/audio-visualization/computeWaveformOverview.ts`):**
 
 - On file load, asynchronously iterates all decoded audio buffers from an `AudioBufferSink`.
 - Computes peak absolute amplitude per column across all channels.
@@ -192,7 +214,7 @@ Provides a full-file amplitude overview that scrolls beneath a fixed playhead at
 - Returns a `Float32Array` of normalised amplitude values (0–1), or `undefined` if cancelled.
 - Cancellation is checked between buffers via an `isCancelled` callback to support file-switch abort.
 
-**Rendering (`drawWaveformOverview` in `src/route-components/player/drawWaveformOverview.ts`):**
+**Rendering (`drawWaveformOverview` in `src/route-components/player/audio-visualization/drawWaveformOverview.ts`):**
 
 - Playhead is fixed at the horizontal centre; the waveform scrolls as playback progresses.
 - Visible window spans `currentTime ± windowSec / 2`. Out-of-bounds regions are left empty.
@@ -208,8 +230,8 @@ Provides a full-file amplitude overview that scrolls beneath a fixed playhead at
 
 To avoid React re-renders on every frame during playback, certain UI elements are updated imperatively via `document.getElementById`. Element IDs are exported as consts from the component that renders them:
 
-- **Progress bar** (`updateProgressBarDOM.ts`): Updates fill width and thumb position. IDs (`progressBarCurrentId`, `progressBarThumbId`) are exported from `PlayerControlOverlay.types.ts`.
-- **Timestamp** (`updateTimestampDOM.ts`): Updates the timestamp text. ID (`timestampTextId`) is exported from `Timestamp.tsx`.
+- **Progress bar** (`dom-updates/updateProgressBarDOM.ts`): Updates fill width and thumb position. IDs (`progressBarCurrentId`, `progressBarThumbId`) are exported from `PlayerControlOverlay.types.ts`.
+- **Timestamp** (`dom-updates/updateTimestampDOM.ts`): Updates the timestamp text. ID (`timestampTextId`) is exported from `Timestamp.tsx`.
 
 Both are called from the render loop in `Player.tsx`.
 
@@ -235,7 +257,7 @@ The overlay auto-hides (along with the mouse cursor) after 3 seconds of no mouse
 
 ##### Seeking
 
-- **Paused seek**: Calls `seek()` which updates `PlaybackClock`, then calls `startVideoIterator` to draw a single frame at the new position without starting playback.
+- **Paused seek**: Calls `seek()` which updates `PlaybackClock`, then tells the decode worker to seek (draws a single frame at the new position without starting playback).
 - **Playing seek**: Pauses playback first (stops all queued audio nodes), then resumes at the new position.
 
 ##### Volume control (`src/ui-components/level-one/volume-control/VolumeControl.tsx`)
@@ -249,7 +271,7 @@ Volume is stored as a 0-1 value in `volumeState` (`src/shared/atoms/volumeState.
 
 Displays current playback time (e.g. "49:24 / 58:27"). Placed to the right of VolumeControl in the left container. Clicking toggles between normal and reversed format (e.g. "-9:03 / 58:27") via a `data-reversed` attribute on the text element. Text content is updated imperatively by `updateTimestampDOM` — the toggle state is read from the DOM attribute. Clicking Timestamp does NOT unpin VolumeControl.
 
-##### Progress bar (`src/ui-components/level-one/player-control-overlay/PlayerControlOverlay.tsx`)
+##### Progress bar (`src/ui-components/level-two/player-control-overlay/PlayerControlOverlay.tsx`)
 
 Supports click-to-seek and drag-to-seek:
 
@@ -258,27 +280,29 @@ Supports click-to-seek and drag-to-seek:
 3. **Drag**: Continuously updates progress via document-level `mousemove` listener.
 4. **Mouse up**: If was playing, resumes at new position; otherwise calls `seek()` to render frame.
 
-Helper functions: `getProgressPercentageFromEvent` (`src/ui-components/level-one/player-control-overlay/getProgressPercentageFromEvent.ts`, returns 0-1), `getProgressFromEvent` (`src/ui-components/level-one/player-control-overlay/getProgressFromEvent.ts`, converts to seconds).
+Helper functions: `getProgressPercentageFromEvent` (`src/ui-components/level-two/player-control-overlay/getProgressPercentageFromEvent.ts`, returns 0-1), `getProgressFromEvent` (`src/ui-components/level-two/player-control-overlay/getProgressFromEvent.ts`, converts to seconds).
 
 ##### Preview thumbnail
 
-The PreviewThumbail uses separate `CanvasSink` (`previewThumbnailVideoSink`) dedicated to thumbnail fetching, plus a `PreviewThumbnailCache` for caching.
+Thumbnail decoding runs in the decode worker via the `GetThumbnail` RPC. The worker uses a dedicated `thumbnailSink` (separate from the playback `videoSink` to avoid iterator pool conflicts), resizes via `OffscreenCanvas`, and encodes to JPEG via `convertToBlob()`. No main-thread `CanvasSink` is used for thumbnails. Preview thumbnails are gated by a decode performance probe — they are only enabled when the file's video can be decoded fast enough for interactive seeking.
 
-**PreviewThumbnailCache (`src/route-components/player/PreviewThumbnailCache.ts`)**:
+**Decode performance probe (`src/route-components/player/utils/getCanSeekInRealTime.ts`):**
+
+- On file load, decodes sample frames at 10%, 33%, 66%, and 90% of the video duration using the decode worker's `probe()` RPC.
+- Each probe has a 1-second wall-clock timeout (`SINGLE_FRAME_THRESHOLD_MS`). If any single frame exceeds this, the function returns `false` immediately and the manager terminates the hung worker and respawns it.
+- Only when all samples pass does `canSeekInRealTime` become `true`, enabling the thumbnail cache and PreviewThumbnail UI.
+
+**PreviewThumbnailCache (`src/route-components/player/preview-thumbnail/PreviewThumbnailCache.ts`)**:
 
 - LRU cache storing `{ timestamp → blob URL }` with a memory limit (default: 100MB).
+- Takes a `DecodeWorkerManager` directly and calls `getThumbnail` for decoding.
 - Background auto-fill: On file load, fetches thumbnails from timestamp 0.
 - On seek, fetch thumbnails on new timestamp.
 - Current auto-fill strategy is a bidirectional, linear fetch on rounded timestamps with 1s intervals.
 - Auto-fill stops completely when memory limit is reached.
 - `dispose()` revokes all blob URLs and clears the cache.
 
-**canvasToThumbnailBlob (`src/route-components/player/canvasToBlob.ts`)**:
-
-- Resizes full-resolution canvas to 160×90 JPEG thumbnails (~28KB each vs ~667KB for full PNG).
-- Enables caching ~3500 thumbnails within the 100MB limit.
-
-**getThumbnail (`src/route-components/player/getThumbnail.ts`)**:
+**getThumbnail (`src/route-components/player/preview-thumbnail/getThumbnail.ts`)**:
 
 - Rounds timestamp to nearest second for cache key consistency with auto-fill.
 

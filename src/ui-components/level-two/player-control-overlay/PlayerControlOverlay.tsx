@@ -14,12 +14,12 @@ import HeadphonesSoundWaveIcon from "../../../assets/svgs/headphones-sound-wave.
 import PauseIcon from "../../../assets/svgs/pause.svg?react";
 import PlayIcon from "../../../assets/svgs/play.svg?react";
 import SettingsIcon from "../../../assets/svgs/setting.svg?react";
-import { updateProgressBarDOM } from "../../../route-components/player/updateProgressBarDOM";
+import { updateProgressBarDOM } from "../../../route-components/player/dom-updates/updateProgressBarDOM";
 import { useDimensions } from "../../../shared/hooks/useDimensions";
 import { AudioTrackSelector } from "../../base/audio-track-selector/AudioTrackSelector";
 import { PlaybackSettings } from "../../base/playback-settings/PlaybackSettings";
 import { PreviewThumbnail } from "../../base/preview-thumbnail/PreviewThumbnail";
-import { previewThumbnailWidth } from "../../base/preview-thumbnail/PreviewThumbnail.styles";
+import { previewThumbnailWidth } from "../../base/preview-thumbnail/PreviewThumbnail.types";
 import { Timestamp } from "../../base/timestamp/Timestamp";
 import { Tooltip } from "../../base/tooltip/Tooltip";
 import { VolumeControl } from "../../level-one/volume-control/VolumeControl";
@@ -57,6 +57,11 @@ import {
 export interface IPlayerControlOverlayProps {
   /** The list of available audio tracks. */
   audioTracks: InputAudioTrack[];
+  /**
+   * Whether preview thumbnails should be rendered. False when the decode
+   * performance probe reports the file is too slow to decode in real time.
+   */
+  canSeekInRealTime: boolean;
   /**
    * Duration in seconds.
    */
@@ -107,7 +112,7 @@ export interface IPlayerControlOverlayProps {
   /**
    * Time in seconds.
    */
-  seek(time: number): Promise<void>;
+  seek(time: number): void;
   /** The index of the currently selected audio track. */
   selectedAudioTrackIndex: number;
   volume: number;
@@ -115,6 +120,7 @@ export interface IPlayerControlOverlayProps {
 
 export const PlayerControlOverlay: FC<IPlayerControlOverlayProps> = ({
   audioTracks,
+  canSeekInRealTime,
   duration,
   fullscreenContainerRef,
   getThumbnail,
@@ -433,8 +439,9 @@ export const PlayerControlOverlay: FC<IPlayerControlOverlayProps> = ({
           onMouseLeave={handleOnMouseLeaveProgressBar}
           ref={progressBarContainerRef}
         >
-          {/* Preview thumbnail - only for files with video. */}
-          {hasVideo && (
+          {/* Preview thumbnail - only for files with video and when the
+              decode-performance probe says the file is fast enough. */}
+          {hasVideo && canSeekInRealTime && (
             <div
               css={[
                 previewThumbnailContainerStyles,

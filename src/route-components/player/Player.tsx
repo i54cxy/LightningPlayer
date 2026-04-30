@@ -3,11 +3,9 @@ import {
   ALL_FORMATS,
   AudioBufferSink,
   BlobSource,
-  CanvasSink,
   Input,
   InputAudioTrack,
   WrappedAudioBuffer,
-  WrappedCanvas,
 } from "mediabunny";
 import { FC, useCallback, useEffect, useRef, useState } from "react";
 import { inputFilesState } from "../../shared/atoms/inputFilesState";
@@ -29,25 +27,24 @@ import { isTruthy } from "../../shared/utils/isTruthy";
 import { FullscreenContainer } from "../../ui-components/base/fullscreen-container/FullscreenContainer";
 import { PlaybackMessage } from "../../ui-components/base/playback-message/PlaybackMessage";
 import { PlayerControlOverlay } from "../../ui-components/level-two/player-control-overlay/PlayerControlOverlay";
-import { computeAnalyserWindowMs } from "./computeAnalyserWindowMs";
-import { computeWaveformOverview } from "./computeWaveformOverview";
-import { drawAudioFrequencyBars } from "./drawAudioFrequencyBars";
-import { drawAudioWaveform } from "./drawAudioWaveform";
-import { drawVideoFrame } from "./drawVideoFrame";
-import { drawWaveformOverview } from "./drawWaveformOverview";
-import { getThumbnail } from "./getThumbnail";
+import { runAudioIterator } from "./audio/runAudioIterator";
+import { computeAnalyserWindowMs } from "./audio-visualization/computeAnalyserWindowMs";
+import { computeWaveformOverview } from "./audio-visualization/computeWaveformOverview";
+import { drawAudioFrequencyBars } from "./audio-visualization/drawAudioFrequencyBars";
+import { drawAudioWaveform } from "./audio-visualization/drawAudioWaveform";
+import { drawWaveformOverview } from "./audio-visualization/drawWaveformOverview";
+import { DecodeWorkerManager } from "./decode-worker/DecodeWorkerManager";
+import { updateProgressBarDOM } from "./dom-updates/updateProgressBarDOM";
+import { updateTimestampDOM } from "./dom-updates/updateTimestampDOM";
 import { PlaybackClock } from "./PlaybackClock";
 import { audioVisualizationCanvasStyles } from "./Player.styles";
 import {
   AUDIO_ANALYSER_FFT_SIZE,
   WAVEFORM_OVERVIEW_WINDOW_SEC,
 } from "./Player.types";
-import { PreviewThumbnailCache } from "./PreviewThumbnailCache";
-import { runAudioIterator } from "./runAudioIterator";
-import { startVideoIterator } from "./startVideoIterator";
-import { updateNextFrame } from "./updateNextFrame";
-import { updateProgressBarDOM } from "./updateProgressBarDOM";
-import { updateTimestampDOM } from "./updateTimestampDOM";
+import { getThumbnail } from "./preview-thumbnail/getThumbnail";
+import { PreviewThumbnailCache } from "./preview-thumbnail/PreviewThumbnailCache";
+import { getCanSeekInRealTime } from "./utils/getCanSeekInRealTime";
 
 export const Player: FC = () => {
   const files = useAtomValue(inputFilesState);
@@ -80,22 +77,24 @@ export const Player: FC = () => {
   const [currentAudioSink, setCurrentAudioSink] = useState<AudioBufferSink>();
   const audioBufferIteratorRef =
     useRef<AsyncGenerator<WrappedAudioBuffer, void, unknown>>(undefined);
-  // VideoSink produces videoFrameIterators for video playback.
-  const [currentVideoSink, setCurrentVideoSink] = useState<CanvasSink>();
-  const videoFrameIteratorRef =
-    useRef<AsyncGenerator<WrappedCanvas, void, unknown>>(undefined);
+  // Owns the video decode worker and the on-screen video canvas (transferred via
+  // transferControlToOffscreen on the first file load that has a video track).
+  const decodeManagerRef = useRef<DecodeWorkerManager>(undefined);
   // Cache for pre-fetched thumbnails.
   const thumbnailCacheRef = useRef<PreviewThumbnailCache>(undefined);
-  // Video sink dedicated to thumbnail fetching. Kept separately so getThumbnail
-  // can fall back to a direct fetch when the cache is unavailable.
-  const thumbnailVideoSinkRef = useRef<CanvasSink>(undefined);
-
   // Total duration in seconds.
-  // When duration is set, it also means that a file has finished loading.
   const [duration, setDuration] = useState<number | undefined>(undefined);
 
   // Whether the current file has video tracks.
   const [hasVideo, setHasVideo] = useState(false);
+  // Whether the file-load sequence (track discovery, decode probe, canvas
+  // transfer) has finished. Controls PlayerControlOverlay visibility.
+  const [isFileLoaded, setIsFileLoaded] = useState(false);
+  // Whether the decode performance probe reports the file can be decoded
+  // fast enough for real-time seeking. Gates the thumbnail cache and the
+  // PreviewThumbnail UI.
+  const [canSeekInRealTime, setCanSeekInRealTime] =
+    useState(false);
   // For real-time audio visualization.
   const [analyserNodeWindow, setAnalyserNodeWindow] = useState<
     number | undefined
@@ -128,53 +127,42 @@ export const Player: FC = () => {
   );
   const waveformOverviewWindowSecRef = useRef(WAVEFORM_OVERVIEW_WINDOW_SEC);
 
-  // asyncId for startVideoIterator. Only incremented in startVideoIterator when
-  // the user starts a new seek. updateNextFrame checks this asyncId to discard
-  // all previous async operations.
-  const asyncIdRef = useRef<number>(0);
-
   // Used by PlayerControlOverlay to toggle play/pause button.
   const [isPlaying, setIsPlaying] = useState(false);
   // Manages playback timing using AudioContext as the master clock.
   const playbackClockRef = useRef<PlaybackClock>(undefined);
 
   const fullscreenContainerRef = useRef<HTMLDivElement>(null);
-  // Ref to the HTML Canvas element for rendering.
+  // Ref to the HTML Canvas element for rendering. Its control is transferred
+  // to the decode worker via transferControlToOffscreen on the first file load
+  // with video — after which the main thread cannot draw to or read from it.
   const canvasRef = useRef<HTMLCanvasElement>(null);
   // Used for drawing and updated by resize handler.
   const screenDimensionsRef = useRef<IDimensions>(undefined);
   const screenDimensions = useDimensions(fullscreenContainerRef);
 
-  // We always render 2 frames when we startVideoIterator. First frame
-  // is rendered immediately and second frame is stored in nextFrameRef.
-  // The render loop renders nextFrame when it's time and kicks off
-  // fetching of the next nextFrame.
-  const nextFrameRef = useRef<WrappedCanvas>(undefined);
-
   const cleanupPlayback = () => {
     playbackClockRef.current?.pause();
-    nextFrameRef.current = undefined;
     // Stop all queued audio nodes to prevent noise.
     for (const node of queuedAudioNodesRef.current) {
       node.stop();
     }
     queuedAudioNodesRef.current.clear();
-    // Dispose iterators.
+    // Dispose audio iterator.
     audioBufferIteratorRef.current?.return();
-    videoFrameIteratorRef.current?.return();
     // Dispose thumbnail cache.
     thumbnailCacheRef.current?.dispose();
-    thumbnailVideoSinkRef.current = undefined;
-    // Clear the canvas.
-    if (canvasRef.current) {
-      const ctx = canvasRef.current?.getContext("2d");
-      ctx?.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
-    }
+    // Reset the worker (clears its iterator + canvas pixels).
+    decodeManagerRef.current?.reset();
   };
 
   const playImpl = async () => {
     if (!playbackClockRef.current) {
       console.error("play: playbackClock not initialized.");
+      return;
+    }
+    if (!decodeManagerRef.current) {
+      console.error("play: decodeManager not initialized.");
       return;
     }
     if (!gainNodeRef.current) {
@@ -186,6 +174,7 @@ export const Player: FC = () => {
     // Resume AudioContext if suspended (required by browser autoplay policy).
     await playbackClockRef.current.audioContext.resume();
     playbackClockRef.current.play();
+    decodeManagerRef.current.setPlaying(true);
 
     if (currentAudioSink) {
       // Start the audio iterator.
@@ -208,9 +197,14 @@ export const Player: FC = () => {
       console.error("pause: playbackClock not initialized.");
       return;
     }
+    if (!decodeManagerRef.current) {
+      console.error("pause: decodeManager not initialized.");
+      return;
+    }
 
     playbackClockRef.current.pause();
     setIsPlaying(false);
+    decodeManagerRef.current.setPlaying(false);
 
     // Stop all audio nodes that were already queued to play.
     for (const node of queuedAudioNodesRef.current) {
@@ -222,9 +216,13 @@ export const Player: FC = () => {
   };
 
   const seekImpl = useCallback(
-    async (time: number) => {
+    (time: number) => {
       if (!playbackClockRef.current) {
         console.error("seek: playbackClock not initialized.");
+        return;
+      }
+      if (!decodeManagerRef.current) {
+        console.error("seek: decodeManager not initialized.");
         return;
       }
 
@@ -239,39 +237,13 @@ export const Player: FC = () => {
       playbackClockRef.current.seek(time);
       // thumbnailCacheRef.current?.startAutoFill(time);
 
-      // Draw frame at new position only if video is present.
-      if (currentVideoSink) {
-        if (!canvasRef.current) {
-          console.error("seek: canvas not ready.");
-          return;
-        }
-
-        const ctx = canvasRef.current.getContext("2d");
-        if (!ctx) {
-          console.error("seek: no canvas context.");
-          return;
-        }
-
-        if (!screenDimensionsRef.current) {
-          console.error("seek: screen dimensions not ready.");
-          return;
-        }
-
-        await startVideoIterator({
-          asyncIdRef,
-          ctx,
-          flipHorizontal,
-          flipVertical,
-          nextFrameRef,
-          playbackClock: playbackClockRef.current,
-          rotation,
-          screenDimensions: screenDimensionsRef.current,
-          videoFrameIteratorRef,
-          videoSink: currentVideoSink,
-        });
+      // Tell the worker to seek and draw at the new position. The worker no-ops
+      // if no playback session is set up (audio-only files).
+      if (hasVideo) {
+        decodeManagerRef.current.seek(time);
       }
     },
-    [currentVideoSink, duration, flipHorizontal, flipVertical, rotation],
+    [duration, hasVideo],
   );
 
   // Initializing screenDimensionsRef.
@@ -284,19 +256,20 @@ export const Player: FC = () => {
           width: fullscreenContainerRef.current.offsetWidth,
         };
         screenDimensionsRef.current = dimensions;
-        if (audioVisualizationCanvasRef.current && canvasRef.current) {
+        if (audioVisualizationCanvasRef.current) {
           audioVisualizationCanvasRef.current.width = dimensions.width;
           audioVisualizationCanvasRef.current.height = dimensions.height;
-          canvasRef.current.width = dimensions.width;
-          canvasRef.current.height = dimensions.height;
         } else {
-          console.error("Unexpected intialization error: canvases not ready.");
+          console.error("Unexpected intialization error: canvas not ready.");
         }
+        // The video canvas is sized by the worker on StartPlayback; the main
+        // thread cannot touch its dimensions once transferControlToOffscreen
+        // has run.
       }
     }
   }, []);
 
-  // Update screenDimensionsRef with resize obeserver update.
+  // Update screenDimensionsRef with resize observer update.
   useEffect(() => {
     if (screenDimensions) {
       if (
@@ -304,21 +277,20 @@ export const Player: FC = () => {
         screenDimensions.width !== screenDimensionsRef.current?.width
       ) {
         screenDimensionsRef.current = screenDimensions;
-        if (audioVisualizationCanvasRef.current && canvasRef.current) {
+        if (audioVisualizationCanvasRef.current) {
           audioVisualizationCanvasRef.current.width = screenDimensions.width;
           audioVisualizationCanvasRef.current.height = screenDimensions.height;
-          canvasRef.current.width = screenDimensions.width;
-          canvasRef.current.height = screenDimensions.height;
-          // Redraw immediately if paused.
-          if (playbackClockRef.current && !playbackClockRef.current.isPlaying) {
-            seekImpl(playbackClockRef.current.currentTime);
-          }
         } else {
-          console.error("Unexpected resize error: canvases not ready.");
+          console.error("Unexpected resize error: canvas not ready.");
         }
+        // Push the new dimensions to the worker; it resizes the offscreen
+        // canvas and redraws the last frame on its own.
+        decodeManagerRef.current?.updateDrawParams({
+          screenDimensions,
+        });
       }
     }
-  }, [screenDimensions, seekImpl]);
+  }, [screenDimensions]);
 
   // Sync audioVisualizationRef for stale-closure-safe access in the render loop.
   useEffect(() => {
@@ -330,15 +302,19 @@ export const Player: FC = () => {
     waveformOverviewWindowSecRef.current = waveformOverviewWindowSec;
   }, [waveformOverviewWindowSec]);
 
-  // Sync transform refs and redraw when flip/rotation changes while paused.
+  // Sync transform refs and push transform changes to the worker. The worker
+  // re-draws its last frame on UpdateDrawParams so paused-state toggles update
+  // the canvas immediately.
   useEffect(() => {
     flipHorizontalRef.current = flipHorizontal;
     flipVerticalRef.current = flipVertical;
     rotationRef.current = rotation;
-    if (playbackClockRef.current && !playbackClockRef.current.isPlaying) {
-      seekImpl(playbackClockRef.current.currentTime);
-    }
-  }, [flipHorizontal, flipVertical, rotation, seekImpl]);
+    decodeManagerRef.current?.updateDrawParams({
+      flipHorizontal,
+      flipVertical,
+      rotation,
+    });
+  }, [flipHorizontal, flipVertical, rotation]);
 
   // Load files.
   useEffect(() => {
@@ -347,12 +323,16 @@ export const Player: FC = () => {
     console.log("file:", currentPlayingFile);
 
     const loadFile = async () => {
+      // Unmount PlayerControlOverlay immediately so the user cannot interact
+      // with stale controls while the async load sequence runs.
+      setIsFileLoaded(false);
+
       if (!currentPlayingFile) {
         // No file (e.g., after Ctrl+R reload). Clean up and reset state.
         cleanupPlayback();
         thumbnailCacheRef.current = undefined;
+        setCanSeekInRealTime(false);
         setCurrentAudioSink(undefined);
-        setCurrentVideoSink(undefined);
         setDuration(undefined);
         setHasVideo(false);
         setIsPlaying(false);
@@ -361,12 +341,6 @@ export const Player: FC = () => {
 
       if (!canvasRef.current) {
         console.error("loadFile: canvas not ready.");
-        return;
-      }
-
-      const ctx = canvasRef.current.getContext("2d");
-      if (!ctx) {
-        console.error("loadFile: no canvas context.");
         return;
       }
 
@@ -411,20 +385,6 @@ export const Player: FC = () => {
       // New file has valid tracks. Clean up old playback before setting up new state.
       cleanupPlayback();
 
-      let videoSink: CanvasSink | undefined;
-      let thumbnailVideoSink: CanvasSink | undefined;
-
-      if (videoTracks[0]) {
-        videoSink = new CanvasSink(videoTracks[0], {
-          fit: "contain", // In case the video changes dimensions over time.
-          poolSize: 2,
-        });
-        // Separate video sink for thumbnails to avoid canvas pool conflicts.
-        thumbnailVideoSink = new CanvasSink(videoTracks[0], {
-          fit: "contain",
-        });
-      }
-
       // Get duration from video track if available, otherwise from audio track.
       const durationTrack = videoTracks[0] ? videoTracks[0] : audioTracks[0];
       const duration = await durationTrack!.computeDuration();
@@ -458,20 +418,57 @@ export const Player: FC = () => {
         const playbackClock = new PlaybackClock(audioContext);
         playbackClockRef.current = playbackClock;
 
-        // Initialize thumbnail cache only if we have video.
-        thumbnailVideoSinkRef.current = thumbnailVideoSink;
-        if (thumbnailVideoSink) {
-          const thumbnailCache = new PreviewThumbnailCache({
-            duration,
-            videoSink: thumbnailVideoSink,
+        // Initialize the decode worker for this file (only if there's a video
+        // track). The same worker handles both the probe RPC, thumbnail
+        // fetching, and the streaming playback session.
+        thumbnailCacheRef.current = undefined;
+        let fileCanSeekInRealTime = false;
+        if (
+          videoTracks[0] &&
+          canvasRef.current &&
+          screenDimensionsRef.current
+        ) {
+          const videoTrackIndex = allTracks.indexOf(videoTracks[0]);
+          if (!decodeManagerRef.current) {
+            decodeManagerRef.current = new DecodeWorkerManager();
+          }
+          await decodeManagerRef.current.loadFile({
+            blob: currentPlayingFile,
+            videoTrackIndex,
           });
-          thumbnailCacheRef.current = thumbnailCache;
-          // thumbnailCache.startAutoFill();
-        } else {
-          thumbnailCacheRef.current = undefined;
-        }
+          if (cancelled) return;
 
-        setAnalyserNodeWindow(computeAnalyserWindowMs(analyserNode));
+          // Probe before startPlayback: probing may time out and restart the
+          // worker; that restart is safe here because the canvas hasn't been
+          // transferred yet (startPlayback is below).
+          fileCanSeekInRealTime = await getCanSeekInRealTime({
+            decodeWorkerManager: decodeManagerRef.current,
+            duration,
+            isCancelled: () => cancelled,
+          });
+          if (cancelled) return;
+
+          if (fileCanSeekInRealTime) {
+            thumbnailCacheRef.current = new PreviewThumbnailCache({
+              decodeWorkerManager: decodeManagerRef.current,
+              duration,
+            });
+            // thumbnailCacheRef.current.startAutoFill();
+          }
+
+          // Transfer the canvas (first call only) and set up the playback
+          // session in the worker.
+          await decodeManagerRef.current.startPlayback({
+            canvasElement: canvasRef.current,
+            drawParams: {
+              flipHorizontal: flipHorizontalRef.current,
+              flipVertical: flipVerticalRef.current,
+              rotation: rotationRef.current,
+              screenDimensions: screenDimensionsRef.current,
+            },
+          });
+          if (cancelled) return;
+        }
 
         // Kick off whole-file peak computation in the background.
         waveformOverviewDataRef.current = undefined;
@@ -488,40 +485,31 @@ export const Player: FC = () => {
           });
         }
 
+        // Open the playback iterator and draw the first frame at t=0.
+        if (videoTracks[0]) {
+          decodeManagerRef.current?.seek(0);
+        }
+
+        // Batch all state updates. React 18+ batches these into a single
+        // render even inside async functions.
+        setAnalyserNodeWindow(computeAnalyserWindowMs(analyserNode));
         setAudioTracks(audioTracks);
         setAudioVisualization(
           videoTracks[0]
             ? AudioVisualization.Off
             : AudioVisualization.FrequencyRealTime,
         );
+        setCanSeekInRealTime(fileCanSeekInRealTime);
         setCurrentAudioSink(audioSink);
-        setCurrentVideoSink(videoSink);
         setDuration(duration);
-        setHasVideo(!!videoTracks[0]);
-        setSelectedAudioTrackIndex(0);
-
-        // Reset playback settings when loading a new file.
         setFlipHorizontal(false);
         setFlipVertical(false);
+        setHasVideo(!!videoTracks[0]);
+        setIsFileLoaded(true);
         setIsPlaying(false);
         setPlaybackSpeed(1);
         setRotation(0);
-
-        // Render first frame only if video is present.
-        if (videoSink) {
-          await startVideoIterator({
-            asyncIdRef,
-            ctx,
-            flipHorizontal: flipHorizontalRef.current,
-            flipVertical: flipVerticalRef.current,
-            nextFrameRef,
-            playbackClock,
-            rotation: rotationRef.current,
-            screenDimensions: screenDimensionsRef.current,
-            videoFrameIteratorRef,
-            videoSink,
-          });
-        }
+        setSelectedAudioTrackIndex(0);
       }
     };
 
@@ -553,14 +541,8 @@ export const Player: FC = () => {
         return;
       }
 
-      if (!canvasRef.current || !audioVisualizationCanvasRef.current) {
-        console.log("render: canvas not ready.");
-        return;
-      }
-
-      const ctx = canvasRef.current.getContext("2d");
-      if (!ctx) {
-        console.log("render: no canvas context.");
+      if (!audioVisualizationCanvasRef.current) {
+        console.log("render: audio visualization canvas not ready.");
         return;
       }
 
@@ -589,36 +571,9 @@ export const Player: FC = () => {
           playbackClockRef.current.seek(duration);
         }
 
-        const nextFrame = nextFrameRef.current;
-
-        // Check if the current playback time has caught up to the next frame.
-        if (nextFrame && nextFrame.timestamp <= playbackTime) {
-          // console.log(
-          //   `render: drawing frame at ${nextFrame.timestamp}, playbackTime: ${playbackTime}`,
-          // );
-          drawVideoFrame({
-            ctx,
-            flipHorizontal: flipHorizontalRef.current,
-            flipVertical: flipVerticalRef.current,
-            rotation: rotationRef.current,
-            screenDimensions: screenDimensionsRef.current,
-            wrappedCanvas: nextFrame,
-          });
-          nextFrameRef.current = undefined;
-
-          // Request the next frame.
-          updateNextFrame({
-            asyncIdRef,
-            ctx,
-            flipHorizontal: flipHorizontalRef.current,
-            flipVertical: flipVerticalRef.current,
-            nextFrameRef,
-            playbackClock: playbackClockRef.current,
-            rotation: rotationRef.current,
-            screenDimensions: screenDimensionsRef.current,
-            videoFrameIterator: videoFrameIteratorRef.current,
-          });
-        }
+        // Drive the worker's video frame draw. The worker decides whether to
+        // draw based on its queued nextFrame's timestamp vs currentTime.
+        decodeManagerRef.current?.tick(playbackTime);
 
         switch (audioVisualizationRef.current) {
           case AudioVisualization.WaveformRealTime: {
@@ -737,6 +692,8 @@ export const Player: FC = () => {
     return () => {
       cleanupPlayback();
       audioContextRef.current?.close();
+      decodeManagerRef.current?.dispose();
+      decodeManagerRef.current = undefined;
     };
   }, []);
 
@@ -891,7 +848,6 @@ export const Player: FC = () => {
       return await getThumbnail({
         thumbnailCache: thumbnailCacheRef.current,
         timestamp,
-        videoSink: thumbnailVideoSinkRef.current,
       });
     },
 
@@ -908,9 +864,10 @@ export const Player: FC = () => {
       />
       <PlaybackMessage />
 
-      {currentPlayingFile && (
+      {currentPlayingFile && isFileLoaded && (
         <PlayerControlOverlay
           audioTracks={audioTracks}
+          canSeekInRealTime={canSeekInRealTime}
           duration={duration ?? 0}
           fullscreenContainerRef={fullscreenContainerRef}
           getThumbnail={getThumbnailCallback}

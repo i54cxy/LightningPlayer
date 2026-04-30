@@ -1,31 +1,33 @@
 import { WrappedCanvas } from "mediabunny";
-import { IDimensions } from "../../shared/types/dimensions";
+import { IDimensions } from "../../../../shared/types/dimensions";
 
-/**
- * Draws the WrappedCanvas to the target canvas context, with optional flip and rotation.
- *
- * @param params.ctx - The 2D rendering context of the target canvas.
- * @param params.flipHorizontal - Whether to flip the frame horizontally.
- * @param params.flipVertical - Whether to flip the frame vertically.
- * @param params.rotation - Rotation in radians, clockwise.
- * @param params.screenDimensions - The dimensions of the target canvas.
- * @param params.wrappedCanvas - The source video frame to draw.
- */
-export const drawVideoFrame = ({
-  ctx,
-  flipHorizontal,
-  flipVertical,
-  rotation,
-  screenDimensions,
-  wrappedCanvas,
-}: {
-  ctx: CanvasRenderingContext2D;
+export interface IPlaybackDrawState {
+  ctx: OffscreenCanvasRenderingContext2D;
   flipHorizontal: boolean;
   flipVertical: boolean;
+  lastDrawnFrame: WrappedCanvas | undefined;
   rotation: number;
   screenDimensions: IDimensions;
+}
+
+/**
+ * Draws a video frame to the offscreen canvas (centered, fit-to-screen, with
+ * optional flip + rotation), and records it on `drawState.lastDrawnFrame` so
+ * later transform / resize updates can re-render the same frame.
+ *
+ * @param params.drawState - The render target and current transform; mutated
+ *   in place to update lastDrawnFrame.
+ * @param params.wrappedCanvas - The decoded source frame to draw.
+ */
+export const drawAndRecordFrame = ({
+  drawState,
+  wrappedCanvas,
+}: {
+  drawState: IPlaybackDrawState;
   wrappedCanvas: WrappedCanvas;
 }) => {
+  const { ctx, flipHorizontal, flipVertical, rotation, screenDimensions } =
+    drawState;
   const { canvas } = wrappedCanvas;
 
   // Axis-aligned bounding box of the rotated frame.
@@ -50,4 +52,6 @@ export const drawVideoFrame = ({
   ctx.rotate(rotation);
   ctx.drawImage(canvas, -dw / 2, -dh / 2, dw, dh);
   ctx.restore();
+
+  drawState.lastDrawnFrame = wrappedCanvas;
 };

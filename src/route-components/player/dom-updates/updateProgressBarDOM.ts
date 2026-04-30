@@ -1,7 +1,7 @@
 import {
   progressBarCurrentId,
   progressBarThumbId,
-} from "../../ui-components/level-two/player-control-overlay/PlayerControlOverlay.types";
+} from "../../../ui-components/level-two/player-control-overlay/PlayerControlOverlay.types";
 
 /**
  * Imperatively updates the progress bar DOM elements to avoid React re-renders.

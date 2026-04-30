@@ -1,4 +1,4 @@
-import { IDimensions } from "../../shared/types/dimensions";
+import { IDimensions } from "../../../shared/types/dimensions";
 import { COLUMNS_PER_SECOND } from "./computeWaveformOverview";
 
 /**
