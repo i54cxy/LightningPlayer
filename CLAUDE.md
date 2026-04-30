@@ -114,7 +114,7 @@ Supports both video and audio-only playback using mediabunny for decoding and We
 1. Creates `Input` from file blob with `BlobSource`.
 2. Gets all tracks via `getTracks()`, filters by `canDecode()`, then separates into video and audio tracks.
 3. If no decodable tracks exist, throws an error (current playback is preserved).
-4. Creates `DecodeWorkerManager` for video decoding in a Web Worker (only when video tracks exist) and `AudioBufferSink` for audio buffers. A separate `CanvasSink` is created on the main thread for thumbnail fetching only.
+4. Creates `DecodeWorkerManager` for video decoding in a Web Worker (only when video tracks exist) and `AudioBufferSink` for audio buffers. Thumbnail decoding also runs in the worker via the `GetThumbnail` RPC.
 5. Audio: Schedules `AudioBufferSourceNode` instances via `runAudioIterator`.
 6. Video: The decode worker renders frames to an `OffscreenCanvas` (transferred from the main thread on the first file load). The main thread drives the worker via `tick(currentTime)` calls on every `requestAnimationFrame`.
 
@@ -140,15 +140,16 @@ Video decoding and rendering runs in a dedicated Web Worker to keep the main thr
 
 **DecodeWorkerManager (`DecodeWorkerManager.ts`)**: Main-thread wrapper. Constructed once per Player mount, reused across files. Key methods:
 
-- `loadFile(blob, videoTrackIndex)` — opens the file in the worker, constructs a `CanvasSink` (with `poolSize: 2`).
-- `probe(timestamp, timeoutMs)` — decodes a single frame and returns wall-clock duration. If the decode exceeds the timeout, the hung worker is terminated and a fresh one is transparently spun up re-loaded to the same file.
+- `loadFile(blob, videoTrackIndex)` — opens the file in the worker, constructs a playback `CanvasSink` (with `poolSize: 2`) and a separate `thumbnailSink` for thumbnail decoding.
+- `probe(timestamp, timeoutMs)` — decodes a single frame and returns wall-clock duration. If the decode exceeds the timeout, the hung worker is terminated and a fresh one is transparently spun up re-loaded to the same file. Rejects all pending thumbnail requests before terminating.
+- `getThumbnail(timestamp)` — decodes a single frame at the given timestamp using the `thumbnailSink`, resizes to thumbnail dimensions via `OffscreenCanvas`, encodes to JPEG, and returns the blob. Concurrent requests are correlated by `requestId`.
 - `startPlayback(canvasElement, drawParams)` — first call only: transfers the `<canvas>` to the worker via `transferControlToOffscreen()`. Subsequent calls are no-ops (the offscreen canvas cannot be re-transferred).
 - `seek(time)` — creates a new frame iterator at the given timestamp, draws the first frame, and buffers the second for tick-driven rendering.
 - `tick(currentTime)` — draws the buffered next frame if its timestamp has been reached and pre-fetches one more. Processes at most one frame per call.
 - `updateDrawParams(partial)` — merges flip/rotation/screen-dimension changes and re-draws the last frame.
 - `reset()` — clears the iterator and canvas pixels between files (the offscreen canvas + draw state persist).
 
-**workerState (`workerState.ts`)**: Module-level mutable state. `videoSink` is set per file, `playbackState` is set on the first `StartPlayback` and persists across files.
+**workerState (`workerState.ts`)**: Module-level mutable state. `videoSink` and `thumbnailSink` are set per file, `playbackState` is set on the first `StartPlayback` and persists across files.
 
 **drawAndRecordFrame (`utils/drawAndRecordFrame.ts`)**: Draws a `WrappedCanvas` to the offscreen canvas with flip/rotation transforms and records it as `lastDrawnFrame` for later re-draws on transform/resize changes.
 
@@ -283,7 +284,7 @@ Helper functions: `getProgressPercentageFromEvent` (`src/ui-components/level-two
 
 ##### Preview thumbnail
 
-The PreviewThumbnail uses a separate `CanvasSink` (`previewThumbnailVideoSink`) on the main thread dedicated to thumbnail fetching, plus a `PreviewThumbnailCache` for caching. Preview thumbnails are gated by a decode performance probe — they are only enabled when the file's video can be decoded fast enough for interactive seeking.
+Thumbnail decoding runs in the decode worker via the `GetThumbnail` RPC. The worker uses a dedicated `thumbnailSink` (separate from the playback `videoSink` to avoid iterator pool conflicts), resizes via `OffscreenCanvas`, and encodes to JPEG via `convertToBlob()`. No main-thread `CanvasSink` is used for thumbnails. Preview thumbnails are gated by a decode performance probe — they are only enabled when the file's video can be decoded fast enough for interactive seeking.
 
 **Decode performance probe (`src/route-components/player/utils/getCanSeekInRealTime.ts`):**
 
@@ -294,16 +295,12 @@ The PreviewThumbnail uses a separate `CanvasSink` (`previewThumbnailVideoSink`) 
 **PreviewThumbnailCache (`src/route-components/player/preview-thumbnail/PreviewThumbnailCache.ts`)**:
 
 - LRU cache storing `{ timestamp → blob URL }` with a memory limit (default: 100MB).
+- Takes a `DecodeWorkerManager` directly and calls `getThumbnail` for decoding.
 - Background auto-fill: On file load, fetches thumbnails from timestamp 0.
 - On seek, fetch thumbnails on new timestamp.
 - Current auto-fill strategy is a bidirectional, linear fetch on rounded timestamps with 1s intervals.
 - Auto-fill stops completely when memory limit is reached.
 - `dispose()` revokes all blob URLs and clears the cache.
-
-**canvasToThumbnailBlob (`src/route-components/player/preview-thumbnail/canvasToBlob.ts`)**:
-
-- Resizes full-resolution canvas to 160×90 JPEG thumbnails (~28KB each vs ~667KB for full PNG).
-- Enables caching ~3500 thumbnails within the 100MB limit.
 
 **getThumbnail (`src/route-components/player/preview-thumbnail/getThumbnail.ts`)**:
 

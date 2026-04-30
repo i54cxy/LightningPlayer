@@ -28,6 +28,9 @@ export const handleLoadFile = async ({
         `Track at index ${videoTrackIndex} is not a video track.`,
       );
     }
+    workerState.thumbnailSink = new CanvasSink(videoTrack, {
+      fit: "contain",
+    });
     workerState.videoSink = new CanvasSink(videoTrack, {
       fit: "contain",
       poolSize: 2,

@@ -1,7 +1,8 @@
 import { css, keyframes, Theme } from "@emotion/react";
-
-export const previewThumbnailHeight = 108;
-export const previewThumbnailWidth = 192;
+import {
+  previewThumbnailHeight,
+  previewThumbnailWidth,
+} from "./PreviewThumbnail.types";
 const borderRadius = 4;
 
 const loadingDotPulse = keyframes({

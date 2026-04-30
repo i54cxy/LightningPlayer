@@ -1,6 +1,7 @@
 import { workerState } from "../workerState";
 
 export const handleReset = () => {
+  workerState.thumbnailSink = undefined;
   workerState.videoSink = undefined;
   const { playbackState } = workerState;
   if (!playbackState) return;

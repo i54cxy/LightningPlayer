@@ -1,6 +1,5 @@
-import { CanvasSink } from "mediabunny";
 import { formatTimestamp } from "../../../shared/utils/formatTimestamp";
-import { canvasToThumbnailBlob } from "./canvasToBlob";
+import { DecodeWorkerManager } from "../decode-worker/DecodeWorkerManager";
 
 export interface IPreviewThumbnailCacheConfig {
   /**
@@ -33,27 +32,27 @@ export class PreviewThumbnailCache {
   private config: IPreviewThumbnailCacheConfig;
   private duration: number;
   // Session ID for auto-fill; incremented to invalidate running loops.
+  private decodeWorkerManager: DecodeWorkerManager;
   private linearAsyncId = 0;
   private totalMemoryBytes = 0;
-  private videoSink: CanvasSink;
 
   /**
    * Creates a new ThumbnailCache instance.
    *
-   * @param params - Configuration and video source.
+   * @param params - Configuration and thumbnail source.
    */
   constructor({
     config,
+    decodeWorkerManager,
     duration,
-    videoSink,
   }: {
     config?: Partial<IPreviewThumbnailCacheConfig>;
+    decodeWorkerManager: DecodeWorkerManager;
     duration: number;
-    videoSink: CanvasSink;
   }) {
     this.config = { ...DEFAULT_CONFIG, ...config };
+    this.decodeWorkerManager = decodeWorkerManager;
     this.duration = duration;
-    this.videoSink = videoSink;
   }
 
   /**
@@ -152,37 +151,14 @@ export class PreviewThumbnailCache {
   }
 
   /**
-   * Fetches a thumbnail and adds it to the cache.
-   * Falls back to iterator if getCanvas returns null (e.g., no frame at exact timestamp 0).
+   * Fetches a thumbnail via the worker and adds it to the cache.
    *
    * @param timestamp - The timestamp to fetch.
-   * @returns True if fetch was successful.
+   * @returns The blob URL, or undefined on failure.
    */
   async fetchAndCache(timestamp: number): Promise<string | undefined> {
     try {
-      let canvas = await this.videoSink.getCanvas(timestamp);
-
-      // Fallback to the first frame at 0s.
-      if (!canvas && timestamp === 0) {
-        const iterator = this.videoSink.canvases(timestamp);
-        canvas = (await iterator.next()).value ?? null;
-        await iterator.return();
-      }
-
-      if (!canvas) {
-        console.error(
-          `PreviewThumbnailCache: error fetching canvas at ${timestamp}`,
-        );
-        return;
-      }
-
-      const blob = await canvasToThumbnailBlob(canvas.canvas);
-
-      if (!blob) {
-        console.error("PreviewThumbnailCache: error converting to blob");
-        return;
-      }
-
+      const blob = await this.decodeWorkerManager.getThumbnail(timestamp);
       const url = URL.createObjectURL(blob);
       this.set(timestamp, url, blob.size);
       return url;

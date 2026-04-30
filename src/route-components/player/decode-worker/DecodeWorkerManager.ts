@@ -23,6 +23,11 @@ export class DecodeWorkerManager {
   private callbacks: IDecodeWorkerManagerCallbacks = {};
   private hasTransferredCanvas = false;
   private lastLoadFileParams: ILoadFileParams | undefined;
+  private nextThumbnailRequestId = 0;
+  private pendingThumbnails = new Map<
+    number,
+    { reject: (reason: Error) => void; resolve: (blob: Blob) => void }
+  >();
   private worker: Worker;
 
   constructor() {
@@ -34,8 +39,29 @@ export class DecodeWorkerManager {
   }
 
   /**
-   * Opens the file in the worker and constructs the shared `videoSink`.
-   * Resolves once the sink is ready. Throws if the worker reports an error.
+   * Decodes a single frame at the given timestamp in the worker, resizes it
+   * to thumbnail dimensions, and returns a JPEG blob. Concurrent requests are
+   * correlated by `requestId`.
+   *
+   * @param timestamp - The timestamp in seconds.
+   * @returns A JPEG blob of the thumbnail.
+   */
+  getThumbnail(timestamp: number): Promise<Blob> {
+    const requestId = this.nextThumbnailRequestId++;
+    return new Promise<Blob>((resolve, reject) => {
+      this.pendingThumbnails.set(requestId, { reject, resolve });
+      this.worker.postMessage({
+        requestId,
+        timestamp,
+        type: DecodeWorkerRequestType.GetThumbnail,
+      });
+    });
+  }
+
+  /**
+   * Opens the file in the worker and constructs the `videoSink` and
+   * `thumbnailSink`. Resolves once both sinks are ready. Throws if the
+   * worker reports an error.
    */
   async loadFile(params: ILoadFileParams): Promise<void> {
     this.lastLoadFileParams = params;
@@ -102,6 +128,7 @@ export class DecodeWorkerManager {
     // the new worker will lack the OffscreenCanvas and video rendering will
     // no-op until the Player is remounted.
     if (result.aborted && this.lastLoadFileParams) {
+      this.rejectAllPendingThumbnails("Worker terminated due to probe timeout.");
       this.worker.terminate();
       this.worker = this.spawnWorker();
       await this.loadFile(this.lastLoadFileParams);
@@ -178,8 +205,16 @@ export class DecodeWorkerManager {
 
   /** Terminates the worker. The manager is unusable after this. */
   dispose(): void {
+    this.rejectAllPendingThumbnails("Worker disposed.");
     this.worker.terminate();
     this.callbacks = {};
+  }
+
+  private rejectAllPendingThumbnails(reason: string): void {
+    for (const [id, { reject }] of this.pendingThumbnails) {
+      reject(new Error(reason));
+      this.pendingThumbnails.delete(id);
+    }
   }
 
   private spawnWorker(): Worker {
@@ -193,6 +228,18 @@ export class DecodeWorkerManager {
         this.callbacks.onEndOfStream?.();
       } else if (message.type === DecodeWorkerEventType.DecodeError) {
         this.callbacks.onDecodeError?.(message.error);
+      } else if (message.type === DecodeWorkerEventType.GetThumbnailResult) {
+        const pending = this.pendingThumbnails.get(message.requestId);
+        if (pending) {
+          this.pendingThumbnails.delete(message.requestId);
+          pending.resolve(message.blob);
+        }
+      } else if (message.type === DecodeWorkerEventType.GetThumbnailError) {
+        const pending = this.pendingThumbnails.get(message.requestId);
+        if (pending) {
+          this.pendingThumbnails.delete(message.requestId);
+          pending.reject(message.error);
+        }
       }
     };
     return worker;

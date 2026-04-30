@@ -19,7 +19,7 @@ import { useDimensions } from "../../../shared/hooks/useDimensions";
 import { AudioTrackSelector } from "../../base/audio-track-selector/AudioTrackSelector";
 import { PlaybackSettings } from "../../base/playback-settings/PlaybackSettings";
 import { PreviewThumbnail } from "../../base/preview-thumbnail/PreviewThumbnail";
-import { previewThumbnailWidth } from "../../base/preview-thumbnail/PreviewThumbnail.styles";
+import { previewThumbnailWidth } from "../../base/preview-thumbnail/PreviewThumbnail.types";
 import { Timestamp } from "../../base/timestamp/Timestamp";
 import { Tooltip } from "../../base/tooltip/Tooltip";
 import { VolumeControl } from "../../level-one/volume-control/VolumeControl";
@@ -119,8 +119,8 @@ export interface IPlayerControlOverlayProps {
 }
 
 export const PlayerControlOverlay: FC<IPlayerControlOverlayProps> = ({
-  canSeekInRealTime,
   audioTracks,
+  canSeekInRealTime,
   duration,
   fullscreenContainerRef,
   getThumbnail,

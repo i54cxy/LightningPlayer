@@ -4,6 +4,7 @@ import {
   DecodeWorkerRequest,
   DecodeWorkerRequestType,
 } from "./decodeWorker.types";
+import { handleGetThumbnail } from "./request-handlers/handleGetThumbnail";
 import { handleLoadFile } from "./request-handlers/handleLoadFile";
 import { handleProbe } from "./request-handlers/handleProbe";
 import { handleReset } from "./request-handlers/handleReset";
@@ -18,6 +19,9 @@ declare const self: DedicatedWorkerGlobalScope;
 self.onmessage = (event: MessageEvent<DecodeWorkerRequest>) => {
   const request = event.data;
   switch (request.type) {
+    case DecodeWorkerRequestType.GetThumbnail:
+      void handleGetThumbnail(request);
+      break;
     case DecodeWorkerRequestType.LoadFile:
       void handleLoadFile(request);
       break;

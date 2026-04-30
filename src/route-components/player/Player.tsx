@@ -3,7 +3,6 @@ import {
   ALL_FORMATS,
   AudioBufferSink,
   BlobSource,
-  CanvasSink,
   Input,
   InputAudioTrack,
   WrappedAudioBuffer,
@@ -43,9 +42,9 @@ import {
   AUDIO_ANALYSER_FFT_SIZE,
   WAVEFORM_OVERVIEW_WINDOW_SEC,
 } from "./Player.types";
-import { getCanSeekInRealTime } from "./utils/getCanSeekInRealTime";
 import { getThumbnail } from "./preview-thumbnail/getThumbnail";
 import { PreviewThumbnailCache } from "./preview-thumbnail/PreviewThumbnailCache";
+import { getCanSeekInRealTime } from "./utils/getCanSeekInRealTime";
 
 export const Player: FC = () => {
   const files = useAtomValue(inputFilesState);
@@ -83,10 +82,6 @@ export const Player: FC = () => {
   const decodeManagerRef = useRef<DecodeWorkerManager>(undefined);
   // Cache for pre-fetched thumbnails.
   const thumbnailCacheRef = useRef<PreviewThumbnailCache>(undefined);
-  // Video sink dedicated to thumbnail fetching. Kept separately so getThumbnail
-  // can fall back to a direct fetch when the cache is unavailable.
-  const thumbnailVideoSinkRef = useRef<CanvasSink>(undefined);
-
   // Total duration in seconds.
   const [duration, setDuration] = useState<number | undefined>(undefined);
 
@@ -157,7 +152,6 @@ export const Player: FC = () => {
     audioBufferIteratorRef.current?.return();
     // Dispose thumbnail cache.
     thumbnailCacheRef.current?.dispose();
-    thumbnailVideoSinkRef.current = undefined;
     // Reset the worker (clears its iterator + canvas pixels).
     decodeManagerRef.current?.reset();
   };
@@ -391,16 +385,6 @@ export const Player: FC = () => {
       // New file has valid tracks. Clean up old playback before setting up new state.
       cleanupPlayback();
 
-      let thumbnailVideoSink: CanvasSink | undefined;
-
-      if (videoTracks[0]) {
-        // Thumbnail sink stays on the main thread; the playback decode sink
-        // lives in the worker (created via DecodeWorkerManager.initialize).
-        thumbnailVideoSink = new CanvasSink(videoTracks[0], {
-          fit: "contain",
-        });
-      }
-
       // Get duration from video track if available, otherwise from audio track.
       const durationTrack = videoTracks[0] ? videoTracks[0] : audioTracks[0];
       const duration = await durationTrack!.computeDuration();
@@ -435,9 +419,8 @@ export const Player: FC = () => {
         playbackClockRef.current = playbackClock;
 
         // Initialize the decode worker for this file (only if there's a video
-        // track). The same worker handles both the probe RPC and the streaming
-        // playback session.
-        thumbnailVideoSinkRef.current = thumbnailVideoSink;
+        // track). The same worker handles both the probe RPC, thumbnail
+        // fetching, and the streaming playback session.
         thumbnailCacheRef.current = undefined;
         let fileCanSeekInRealTime = false;
         if (
@@ -458,21 +441,19 @@ export const Player: FC = () => {
           // Probe before startPlayback: probing may time out and restart the
           // worker; that restart is safe here because the canvas hasn't been
           // transferred yet (startPlayback is below).
-          if (thumbnailVideoSink) {
-            fileCanSeekInRealTime = await getCanSeekInRealTime({
+          fileCanSeekInRealTime = await getCanSeekInRealTime({
+            decodeWorkerManager: decodeManagerRef.current,
+            duration,
+            isCancelled: () => cancelled,
+          });
+          if (cancelled) return;
+
+          if (fileCanSeekInRealTime) {
+            thumbnailCacheRef.current = new PreviewThumbnailCache({
               decodeWorkerManager: decodeManagerRef.current,
               duration,
-              isCancelled: () => cancelled,
             });
-            if (cancelled) return;
-
-            if (fileCanSeekInRealTime) {
-              thumbnailCacheRef.current = new PreviewThumbnailCache({
-                duration,
-                videoSink: thumbnailVideoSink,
-              });
-              // thumbnailCacheRef.current.startAutoFill();
-            }
+            // thumbnailCacheRef.current.startAutoFill();
           }
 
           // Transfer the canvas (first call only) and set up the playback
@@ -867,7 +848,6 @@ export const Player: FC = () => {
       return await getThumbnail({
         thumbnailCache: thumbnailCacheRef.current,
         timestamp,
-        videoSink: thumbnailVideoSinkRef.current,
       });
     },
 
@@ -886,8 +866,8 @@ export const Player: FC = () => {
 
       {currentPlayingFile && isFileLoaded && (
         <PlayerControlOverlay
-          canSeekInRealTime={canSeekInRealTime}
           audioTracks={audioTracks}
+          canSeekInRealTime={canSeekInRealTime}
           duration={duration ?? 0}
           fullscreenContainerRef={fullscreenContainerRef}
           getThumbnail={getThumbnailCallback}
