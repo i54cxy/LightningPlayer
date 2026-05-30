@@ -77,8 +77,9 @@ export const Player: FC = () => {
   const [currentAudioSink, setCurrentAudioSink] = useState<AudioBufferSink>();
   const audioBufferIteratorRef =
     useRef<AsyncGenerator<WrappedAudioBuffer, void, unknown>>(undefined);
-  // Owns the video decode worker and the on-screen video canvas (transferred via
-  // transferControlToOffscreen on the first file load that has a video track).
+  // Owns the video decode worker. Persists for the Player's lifetime; recycles
+  // its worker per file via terminateWorker(). See canvasRef below for the
+  // canvas-transfer lifecycle.
   const decodeManagerRef = useRef<DecodeWorkerManager>(undefined);
   // Cache for pre-fetched thumbnails.
   const thumbnailCacheRef = useRef<PreviewThumbnailCache>(undefined);
@@ -137,8 +138,8 @@ export const Player: FC = () => {
   // to the decode worker via transferControlToOffscreen during startPlayback —
   // after which the main thread cannot draw to or read from it, and the element
   // can never be transferred again. Each file load terminates the old worker
-  // and spawns a new one, so we remount the element (via canvasGenerationRef
-  // below) on every file change to hand the new worker a fresh, never-
+  // and spawns a new one, so we remount the element (via the canvasGeneration
+  // key below) on every file change to hand the new worker a fresh, never-
   // transferred canvas.
   const canvasRef = useRef<HTMLCanvasElement>(null);
   // Used as the <canvas> React key to force a fresh element (see canvasRef
@@ -433,8 +434,8 @@ export const Player: FC = () => {
         playbackClockRef.current = playbackClock;
 
         // Initialize the decode worker for this file (only if there's a video
-        // track). The same worker handles both the probe RPC, thumbnail
-        // fetching, and the streaming playback session.
+        // track). The worker handles the probe RPC, thumbnail fetching, and the
+        // streaming playback session.
         thumbnailCacheRef.current = undefined;
         let fileIsPreviewThumbnailEnabled = false;
         if (
@@ -642,10 +643,11 @@ export const Player: FC = () => {
 
     // Also call the render function on an interval to make sure the video keeps
     // updating even if the tab isn't visible.
-    setInterval(() => render(false), 500);
+    const intervalId = setInterval(() => render(false), 500);
 
     return () => {
       cancelled = true;
+      clearInterval(intervalId);
     };
   }, [duration]);
 
@@ -884,7 +886,6 @@ export const Player: FC = () => {
       {currentPlayingFile && isFileLoaded && (
         <PlayerControlOverlay
           audioTracks={audioTracks}
-          isPreviewThumbnailEnabled={isPreviewThumbnailEnabled}
           duration={duration ?? 0}
           fullscreenContainerRef={fullscreenContainerRef}
           getThumbnail={getThumbnailCallback}
@@ -892,6 +893,7 @@ export const Player: FC = () => {
           isDraggingProgressBarRef={isDraggingProgressBarRef}
           isMuted={isMuted}
           isPlaying={isPlaying}
+          isPreviewThumbnailEnabled={isPreviewThumbnailEnabled}
           onMuteToggle={handleMuteToggle}
           onSelectAudioTrack={handleSelectAudioTrack}
           onVolumeChange={handleVolumeChange}

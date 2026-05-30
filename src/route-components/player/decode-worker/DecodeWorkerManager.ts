@@ -5,7 +5,6 @@ import {
   IPlaybackDrawParams,
 } from "./decodeWorker.types";
 import {
-  IDecodeWorkerManagerCallbacks,
   ILoadFileParams,
   IProbeFrameResult,
 } from "./DecodeWorkerManager.types";
@@ -22,7 +21,6 @@ import {
  * recover a hung worker, then re-loads the same file.
  */
 export class DecodeWorkerManager {
-  private callbacks: IDecodeWorkerManagerCallbacks = {};
   // Set by dispose(); guards the probe-timeout respawn so a probe that times
   // out after disposal cannot resurrect a worker from a dead manager.
   private disposed = false;
@@ -37,10 +35,6 @@ export class DecodeWorkerManager {
 
   constructor() {
     this.worker = this.spawnWorker();
-  }
-
-  setCallbacks(callbacks: IDecodeWorkerManagerCallbacks) {
-    this.callbacks = callbacks;
   }
 
   /**
@@ -92,9 +86,8 @@ export class DecodeWorkerManager {
 
   /**
    * Decodes one frame at the given timestamp. If the decode exceeds
-   * `timeoutMs`, the hung worker is terminated. The manager then transparently
-   * spins up a fresh worker, re-loads the same file, and returns
-   * `aborted: true`.
+   * `timeoutMs`, the hung worker is recycled via `terminateWorker()`, the file
+   * is re-loaded into the fresh worker, and `aborted: true` is returned.
    */
   async probe({
     timeoutMs,
@@ -221,7 +214,6 @@ export class DecodeWorkerManager {
     this.disposed = true;
     this.rejectAllPendingThumbnails("Worker disposed.");
     this.worker.terminate();
-    this.callbacks = {};
   }
 
   private rejectAllPendingThumbnails(reason: string): void {
@@ -238,10 +230,8 @@ export class DecodeWorkerManager {
     );
     worker.onmessage = (event: MessageEvent<DecodeWorkerEvent>) => {
       const message = event.data;
-      if (message.type === DecodeWorkerEventType.EndOfStream) {
-        this.callbacks.onEndOfStream?.();
-      } else if (message.type === DecodeWorkerEventType.DecodeError) {
-        this.callbacks.onDecodeError?.(message.error);
+      if (message.type === DecodeWorkerEventType.DecodeError) {
+        console.error("DecodeWorkerManager: worker decode error:", message.error);
       } else if (message.type === DecodeWorkerEventType.GetThumbnailResult) {
         const pending = this.pendingThumbnails.get(message.requestId);
         if (pending) {

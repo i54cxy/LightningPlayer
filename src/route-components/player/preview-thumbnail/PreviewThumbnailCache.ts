@@ -3,7 +3,6 @@ import { DecodeWorkerManager } from "../decode-worker/DecodeWorkerManager";
 
 interface ICachedThumbnail {
   sizeBytes: number;
-  timestamp: number;
   url: string;
 }
 
@@ -85,23 +84,13 @@ export class PreviewThumbnailCache {
   }
 
   /**
-   * Checks if a timestamp is already cached.
-   *
-   * @param timestamp - The timestamp in seconds.
-   * @returns True if the timestamp is cached.
-   */
-  has(timestamp: number): boolean {
-    return this.cache.has(timestamp);
-  }
-
-  /**
    * Adds a thumbnail to the cache, evicting old entries if over memory limit.
    *
    * @param timestamp - The timestamp in seconds.
    * @param url - The blob URL for the thumbnail.
    * @param sizeBytes - The size of the blob in bytes.
    */
-  set(timestamp: number, url: string, sizeBytes: number): void {
+  private set(timestamp: number, url: string, sizeBytes: number): void {
     // If already cached, revoke old URL and update.
     const existing = this.cache.get(timestamp);
     if (existing) {
@@ -119,7 +108,7 @@ export class PreviewThumbnailCache {
     }
 
     // Add new entry.
-    this.cache.set(timestamp, { sizeBytes, timestamp, url });
+    this.cache.set(timestamp, { sizeBytes, url });
     this.totalMemoryBytes += sizeBytes;
   }
 

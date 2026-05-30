@@ -40,7 +40,6 @@ export const handleSeek = async ({
     }
     if (firstResult.done) {
       playbackState.iterator = undefined;
-      self.postMessage({ type: DecodeWorkerEventType.EndOfStream });
       return;
     }
     drawAndRecordFrame({

@@ -1,8 +1,3 @@
-export interface IDecodeWorkerManagerCallbacks {
-  onDecodeError?: (error: Error) => void;
-  onEndOfStream?: () => void;
-}
-
 export interface ILoadFileParams {
   blob: Blob;
   videoTrackIndex: number;

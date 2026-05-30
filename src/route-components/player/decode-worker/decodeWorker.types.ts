@@ -13,7 +13,6 @@ export enum DecodeWorkerRequestType {
 
 export enum DecodeWorkerEventType {
   DecodeError = "DecodeError",
-  EndOfStream = "EndOfStream",
   GetThumbnailError = "GetThumbnailError",
   GetThumbnailResult = "GetThumbnailResult",
   LoadFileComplete = "LoadFileComplete",
@@ -61,11 +60,10 @@ export type DecodeWorkerRequest =
 /**
  * Message sent from the decode worker to the main thread.
  * Each RPC-shaped request has a success and an error variant; the streaming
- * session emits EndOfStream on iterator exhaustion and DecodeError on failure.
+ * session emits DecodeError on failure.
  */
 export type DecodeWorkerEvent =
   | { error: Error; type: DecodeWorkerEventType.DecodeError }
-  | { type: DecodeWorkerEventType.EndOfStream }
   | { error: Error; requestId: number; type: DecodeWorkerEventType.GetThumbnailError }
   | { blob: Blob; requestId: number; type: DecodeWorkerEventType.GetThumbnailResult }
   | { type: DecodeWorkerEventType.LoadFileComplete }

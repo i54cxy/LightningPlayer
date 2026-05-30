@@ -35,7 +35,6 @@ export const handleTick = async ({
     if (localAsyncId !== playbackState.asyncId) return;
     if (result.done) {
       playbackState.iterator = undefined;
-      self.postMessage({ type: DecodeWorkerEventType.EndOfStream });
       return;
     }
     playbackState.nextFrame = result.value;
