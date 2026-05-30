@@ -35,15 +35,16 @@ export class PreviewThumbnailCache {
   }
 
   /**
-   * Disposes of the cache, revoking all blob URLs and clearing entries.
+   * Clears the cache, revoking all blob URLs and emptying entries. The cache
+   * remains usable afterwards.
    */
-  dispose(): void {
+  reset(): void {
     for (const entry of this.cache.values()) {
       URL.revokeObjectURL(entry.url);
     }
     this.cache.clear();
     this.totalMemoryBytes = 0;
-    console.log("PreviewThumbnailCache: disposed");
+    console.log("PreviewThumbnailCache: reset");
   }
 
   /**

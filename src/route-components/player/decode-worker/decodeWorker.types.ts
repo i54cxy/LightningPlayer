@@ -4,7 +4,6 @@ export enum DecodeWorkerRequestType {
   GetThumbnail = "GetThumbnail",
   LoadFile = "LoadFile",
   Probe = "Probe",
-  Reset = "Reset",
   Seek = "Seek",
   SetPlaying = "SetPlaying",
   StartPlayback = "StartPlayback",
@@ -46,7 +45,6 @@ export type DecodeWorkerRequest =
   | { requestId: number; timestamp: number; type: DecodeWorkerRequestType.GetThumbnail }
   | { blob: Blob; type: DecodeWorkerRequestType.LoadFile; videoTrackIndex: number }
   | { timestamp: number; type: DecodeWorkerRequestType.Probe }
-  | { type: DecodeWorkerRequestType.Reset }
   | { time: number; type: DecodeWorkerRequestType.Seek }
   | { isPlaying: boolean; type: DecodeWorkerRequestType.SetPlaying }
   | {

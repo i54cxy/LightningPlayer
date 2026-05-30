@@ -134,9 +134,25 @@ export const Player: FC = () => {
 
   const fullscreenContainerRef = useRef<HTMLDivElement>(null);
   // Ref to the HTML Canvas element for rendering. Its control is transferred
-  // to the decode worker via transferControlToOffscreen on the first file load
-  // with video — after which the main thread cannot draw to or read from it.
+  // to the decode worker via transferControlToOffscreen during startPlayback —
+  // after which the main thread cannot draw to or read from it, and the element
+  // can never be transferred again. Each file load terminates the old worker
+  // and spawns a new one, so we remount the element (via canvasGenerationRef
+  // below) on every file change to hand the new worker a fresh, never-
+  // transferred canvas.
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  // Used as the <canvas> React key to force a fresh element (see canvasRef
+  // above). Adjusted during render via the React "store info from previous
+  // render" pattern: when the file changes we bump the generation, which
+  // re-renders and remounts the canvas before the load effect runs.
+  const [canvasGeneration, setCanvasGeneration] = useState(0);
+  const [previousLoadedFile, setPreviousLoadedFile] = useState(
+    currentPlayingFile,
+  );
+  if (previousLoadedFile !== currentPlayingFile) {
+    setPreviousLoadedFile(currentPlayingFile);
+    setCanvasGeneration((generation) => generation + 1);
+  }
   // Used for drawing and updated by resize handler.
   const screenDimensionsRef = useRef<IDimensions>(undefined);
   const screenDimensions = useDimensions(fullscreenContainerRef);
@@ -150,10 +166,10 @@ export const Player: FC = () => {
     queuedAudioNodesRef.current.clear();
     // Dispose audio iterator.
     audioBufferIteratorRef.current?.return();
-    // Dispose thumbnail cache.
-    thumbnailCacheRef.current?.dispose();
-    // Reset the worker (clears its iterator + canvas pixels).
-    decodeManagerRef.current?.reset();
+    // Clear the thumbnail cache (revokes blob URLs); the instance is reused.
+    thumbnailCacheRef.current?.reset();
+    // The decode worker is recycled (terminated + respawned) per load — see the
+    // load effect cleanup, which calls decodeManagerRef.current.terminateWorker.
   };
 
   const playImpl = async () => {
@@ -513,6 +529,11 @@ export const Player: FC = () => {
 
     return () => {
       cancelled = true;
+      // Kill everything from the old file: terminating the worker instantly
+      // stops any in-flight decode on its thread. The manager persists for the
+      // Player's lifetime and spawns a fresh worker for the next load (paired
+      // with a fresh canvas element); it is disposed on unmount.
+      decodeManagerRef.current?.terminateWorker();
     };
   }, [
     currentPlayingFile,
@@ -852,7 +873,7 @@ export const Player: FC = () => {
 
   return (
     <FullscreenContainer ref={fullscreenContainerRef}>
-      <canvas ref={canvasRef} />
+      <canvas key={canvasGeneration} ref={canvasRef} />
       <canvas
         css={audioVisualizationCanvasStyles}
         data-visible={audioVisualization !== AudioVisualization.Off}

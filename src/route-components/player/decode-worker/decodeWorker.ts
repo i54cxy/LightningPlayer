@@ -7,7 +7,6 @@ import {
 import { handleGetThumbnail } from "./request-handlers/handleGetThumbnail";
 import { handleLoadFile } from "./request-handlers/handleLoadFile";
 import { handleProbe } from "./request-handlers/handleProbe";
-import { handleReset } from "./request-handlers/handleReset";
 import { handleSeek } from "./request-handlers/handleSeek";
 import { handleSetPlaying } from "./request-handlers/handleSetPlaying";
 import { handleStartPlayback } from "./request-handlers/handleStartPlayback";
@@ -42,9 +41,6 @@ self.onmessage = (event: MessageEvent<DecodeWorkerRequest>) => {
       break;
     case DecodeWorkerRequestType.UpdateDrawParams:
       handleUpdateDrawParams(request);
-      break;
-    case DecodeWorkerRequestType.Reset:
-      handleReset();
       break;
   }
 };

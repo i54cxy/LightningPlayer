@@ -138,18 +138,19 @@ Both audio and video playback rely on `PlaybackClock.currentTime` to achieve syn
 
 Video decoding and rendering runs in a dedicated Web Worker to keep the main thread free for UI interaction.
 
-**DecodeWorkerManager (`DecodeWorkerManager.ts`)**: Main-thread wrapper. Constructed once per Player mount, reused across files. Key methods:
+**DecodeWorkerManager (`DecodeWorkerManager.ts`)**: Main-thread wrapper. Constructed once per Player mount and persists for its lifetime, but recycles its underlying worker per file via `terminateWorker()`. Key methods:
 
 - `loadFile(blob, videoTrackIndex)` — opens the file in the worker, constructs a playback `CanvasSink` (with `poolSize: 2`) and a separate `thumbnailSink` for thumbnail decoding.
 - `probe(timestamp, timeoutMs)` — decodes a single frame and returns wall-clock duration. If the decode exceeds the timeout, the hung worker is terminated and a fresh one is transparently spun up re-loaded to the same file. Rejects all pending thumbnail requests before terminating.
 - `getThumbnail(timestamp)` — decodes a single frame at the given timestamp using the `thumbnailSink`, resizes to thumbnail dimensions via `OffscreenCanvas`, encodes to JPEG, and returns the blob. Concurrent requests are correlated by `requestId`.
-- `startPlayback(canvasElement, drawParams)` — first call only: transfers the `<canvas>` to the worker via `transferControlToOffscreen()`. Subsequent calls are no-ops (the offscreen canvas cannot be re-transferred).
+- `startPlayback(canvasElement, drawParams)` — transfers the `<canvas>` to the current worker via `transferControlToOffscreen()`; a no-op if that worker already received a canvas (the offscreen canvas cannot be re-transferred). Because the worker is recycled per file by `terminateWorker()`, each file's fresh worker is given a fresh, never-transferred `<canvas>` element (remounted in `Player.tsx` via a per-file key).
 - `seek(time)` — creates a new frame iterator at the given timestamp, draws the first frame, and buffers the second for tick-driven rendering.
 - `tick(currentTime)` — draws the buffered next frame if its timestamp has been reached and pre-fetches one more. Processes at most one frame per call.
 - `updateDrawParams(partial)` — merges flip/rotation/screen-dimension changes and re-draws the last frame.
-- `reset()` — clears the iterator and canvas pixels between files (the offscreen canvas + draw state persist).
+- `terminateWorker()` — terminates the current worker (instantly stopping any in-flight decode on its thread) and spawns a fresh idle replacement with no file loaded and no canvas transferred. The single place workers are recycled; used both on file switch and to recover a hung worker on probe timeout.
+- `dispose()` — terminates the worker permanently; called on Player unmount.
 
-**workerState (`workerState.ts`)**: Module-level mutable state. `videoSink` and `thumbnailSink` are set per file, `playbackState` is set on the first `StartPlayback` and persists across files.
+**workerState (`workerState.ts`)**: Module-level mutable state, one set per worker instance. `videoSink` and `thumbnailSink` are set on `LoadFile`, `playbackState` on `StartPlayback`. Since the worker is terminated and respawned per file, this state starts fresh for every file.
 
 **drawAndRecordFrame (`utils/drawAndRecordFrame.ts`)**: Draws a `WrappedCanvas` to the offscreen canvas with flip/rotation transforms and records it as `lastDrawnFrame` for later re-draws on transform/resize changes.
 
@@ -175,7 +176,7 @@ Schedules audio buffers using Web Audio API:
 4. Throttles when >1 second buffered ahead.
 5. Tracks scheduled nodes in `queuedAudioNodes` Set (added after `start()`, removed on `ended`).
 
-**Cleanup (`cleanupPlayback`):** Pauses the clock, stops all nodes in `queuedAudioNodes` via `node.stop()`, releases the audio iterator via `.return()`, disposes the thumbnail cache, and calls `decodeManagerRef.current.reset()` (which clears the worker's iterator + canvas pixels).
+**Cleanup (`cleanupPlayback`):** Pauses the clock, stops all nodes in `queuedAudioNodes` via `node.stop()`, releases the audio iterator via `.return()`, and resets the thumbnail cache. The decode worker is recycled separately: the file-load effect cleanup calls `decodeManagerRef.current.terminateWorker()`, which terminates the current worker (instantly stopping the old file's decode) and spawns a fresh one for the next file. The `DecodeWorkerManager` itself persists for the Player's lifetime and is disposed on unmount.
 
 #### Audio visualization
 
@@ -298,7 +299,7 @@ Thumbnail decoding runs in the decode worker via the `GetThumbnail` RPC. The wor
 - LRU cache storing `{ timestamp → blob URL }` with a memory limit (default: 100MB).
 - Takes a `DecodeWorkerManager` directly and calls `getThumbnail` for decoding.
 - Serves as a deduplication cache — prevents re-decoding the same timestamp on repeated seeks.
-- `dispose()` revokes all blob URLs and clears the cache.
+- `reset()` revokes all blob URLs and clears the cache; the instance remains usable afterwards.
 
 **getThumbnail (`src/route-components/player/preview-thumbnail/getThumbnail.ts`)**:
 

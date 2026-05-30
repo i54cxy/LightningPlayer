@@ -13,14 +13,19 @@ import {
 /**
  * Main-thread wrapper around the decode worker. Owns the worker lifecycle.
  *
- * Construct once per Player mount. Call `loadFile` per file. The same worker
- * is reused across files so its offscreen canvas — transferred on the first
- * `startPlayback` — survives. On a probe timeout the manager terminates the
- * hung worker and transparently spins up a fresh one re-loaded to the same
- * file.
+ * Construct once per Player mount; `dispose()` on unmount. The manager owns the
+ * worker lifecycle and recycles it via `terminateWorker()`: call that when
+ * switching files to instantly stop the old file's in-flight decode and spin up
+ * a fresh worker. Because the offscreen canvas transferred in `startPlayback`
+ * cannot be re-transferred, the new worker is paired with a fresh `<canvas>`
+ * element each time. A probe timeout uses the same `terminateWorker()` path to
+ * recover a hung worker, then re-loads the same file.
  */
 export class DecodeWorkerManager {
   private callbacks: IDecodeWorkerManagerCallbacks = {};
+  // Set by dispose(); guards the probe-timeout respawn so a probe that times
+  // out after disposal cannot resurrect a worker from a dead manager.
+  private disposed = false;
   private hasTransferredCanvas = false;
   private lastLoadFileParams: ILoadFileParams | undefined;
   private nextThumbnailRequestId = 0;
@@ -127,10 +132,8 @@ export class DecodeWorkerManager {
     // transferred yet (i.e. startPlayback hasn't been called). If it has,
     // the new worker will lack the OffscreenCanvas and video rendering will
     // no-op until the Player is remounted.
-    if (result.aborted && this.lastLoadFileParams) {
-      this.rejectAllPendingThumbnails("Worker terminated due to probe timeout.");
-      this.worker.terminate();
-      this.worker = this.spawnWorker();
+    if (result.aborted && this.lastLoadFileParams && !this.disposed) {
+      this.terminateWorker();
       await this.loadFile(this.lastLoadFileParams);
     }
     return result;
@@ -199,12 +202,23 @@ export class DecodeWorkerManager {
     });
   }
 
-  reset(): void {
-    this.worker.postMessage({ type: DecodeWorkerRequestType.Reset });
+  /**
+   * Recycles the worker: terminates the current one — instantly stopping any
+   * in-flight decode on its thread — and spawns a fresh, idle replacement with
+   * no file loaded and no canvas transferred. The single place workers are
+   * replaced; call it when switching files and to recover a hung worker.
+   */
+  terminateWorker(): void {
+    if (this.disposed) return;
+    this.rejectAllPendingThumbnails("Worker terminated.");
+    this.worker.terminate();
+    this.worker = this.spawnWorker();
+    this.hasTransferredCanvas = false;
   }
 
   /** Terminates the worker. The manager is unusable after this. */
   dispose(): void {
+    this.disposed = true;
     this.rejectAllPendingThumbnails("Worker disposed.");
     this.worker.terminate();
     this.callbacks = {};
