@@ -59,9 +59,9 @@ export interface IPlayerControlOverlayProps {
   audioTracks: InputAudioTrack[];
   /**
    * Whether preview thumbnails should be rendered. False when the decode
-   * performance probe reports the file is too slow to decode in real time.
+   * performance probe reports the file is too slow for interactive seeking.
    */
-  canSeekInRealTime: boolean;
+  isPreviewThumbnailEnabled: boolean;
   /**
    * Duration in seconds.
    */
@@ -120,7 +120,7 @@ export interface IPlayerControlOverlayProps {
 
 export const PlayerControlOverlay: FC<IPlayerControlOverlayProps> = ({
   audioTracks,
-  canSeekInRealTime,
+  isPreviewThumbnailEnabled,
   duration,
   fullscreenContainerRef,
   getThumbnail,
@@ -441,7 +441,7 @@ export const PlayerControlOverlay: FC<IPlayerControlOverlayProps> = ({
         >
           {/* Preview thumbnail - only for files with video and when the
               decode-performance probe says the file is fast enough. */}
-          {hasVideo && canSeekInRealTime && (
+          {hasVideo && isPreviewThumbnailEnabled && (
             <div
               css={[
                 previewThumbnailContainerStyles,
@@ -507,30 +507,31 @@ export const PlayerControlOverlay: FC<IPlayerControlOverlayProps> = ({
             </Tooltip>
           </div>
           <div css={rightContainerStyles}>
-            <Tooltip
-              boundsRef={progressBarContainerRef}
-              css={tooltipContainerStyles}
-              showTooltip={isAudioTrackSelectorOpen ? false : undefined}
-              text={"Audio Track"}
-              tooltipStylesOverride={playerControlTooltipStyles}
-            >
-              <button
-                aria-label={"Audio Track"}
-                css={bottomControlsButtonStyles}
-                disabled={audioTracks.length === 0}
-                onClick={handleOnClickAudioTrackButton}
+            {audioTracks.length > 1 && (
+              <Tooltip
+                boundsRef={progressBarContainerRef}
+                css={tooltipContainerStyles}
+                showTooltip={isAudioTrackSelectorOpen ? false : undefined}
+                text={"Audio Track"}
+                tooltipStylesOverride={playerControlTooltipStyles}
               >
-                <HeadphonesSoundWaveIcon />
-              </button>
-              {isAudioTrackSelectorOpen && (
-                <AudioTrackSelector
-                  audioTracks={audioTracks}
-                  css={audioTrackSelectorPositionStyles}
-                  onSelectTrack={handleSelectAudioTrack}
-                  selectedTrackIndex={selectedAudioTrackIndex}
-                />
-              )}
-            </Tooltip>
+                <button
+                  aria-label={"Audio Track"}
+                  css={bottomControlsButtonStyles}
+                  onClick={handleOnClickAudioTrackButton}
+                >
+                  <HeadphonesSoundWaveIcon />
+                </button>
+                {isAudioTrackSelectorOpen && (
+                  <AudioTrackSelector
+                    audioTracks={audioTracks}
+                    css={audioTrackSelectorPositionStyles}
+                    onSelectTrack={handleSelectAudioTrack}
+                    selectedTrackIndex={selectedAudioTrackIndex}
+                  />
+                )}
+              </Tooltip>
+            )}
             <Tooltip
               boundsRef={progressBarContainerRef}
               css={tooltipContainerStyles}

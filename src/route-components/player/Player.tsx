@@ -44,7 +44,7 @@ import {
 } from "./Player.types";
 import { getThumbnail } from "./preview-thumbnail/getThumbnail";
 import { PreviewThumbnailCache } from "./preview-thumbnail/PreviewThumbnailCache";
-import { getCanSeekInRealTime } from "./utils/getCanSeekInRealTime";
+import { getIsPreviewThumbnailEnabled } from "./utils/getIsPreviewThumbnailEnabled";
 
 export const Player: FC = () => {
   const files = useAtomValue(inputFilesState);
@@ -91,9 +91,9 @@ export const Player: FC = () => {
   // transfer) has finished. Controls PlayerControlOverlay visibility.
   const [isFileLoaded, setIsFileLoaded] = useState(false);
   // Whether the decode performance probe reports the file can be decoded
-  // fast enough for real-time seeking. Gates the thumbnail cache and the
+  // fast enough for preview thumbnails. Gates the thumbnail cache and the
   // PreviewThumbnail UI.
-  const [canSeekInRealTime, setCanSeekInRealTime] =
+  const [isPreviewThumbnailEnabled, setIsPreviewThumbnailEnabled] =
     useState(false);
   // For real-time audio visualization.
   const [analyserNodeWindow, setAnalyserNodeWindow] = useState<
@@ -235,8 +235,6 @@ export const Player: FC = () => {
       progressRef.current = time;
       updateProgressBarDOM({ duration, progress: time });
       playbackClockRef.current.seek(time);
-      // thumbnailCacheRef.current?.startAutoFill(time);
-
       // Tell the worker to seek and draw at the new position. The worker no-ops
       // if no playback session is set up (audio-only files).
       if (hasVideo) {
@@ -331,7 +329,7 @@ export const Player: FC = () => {
         // No file (e.g., after Ctrl+R reload). Clean up and reset state.
         cleanupPlayback();
         thumbnailCacheRef.current = undefined;
-        setCanSeekInRealTime(false);
+        setIsPreviewThumbnailEnabled(false);
         setCurrentAudioSink(undefined);
         setDuration(undefined);
         setHasVideo(false);
@@ -422,7 +420,7 @@ export const Player: FC = () => {
         // track). The same worker handles both the probe RPC, thumbnail
         // fetching, and the streaming playback session.
         thumbnailCacheRef.current = undefined;
-        let fileCanSeekInRealTime = false;
+        let fileIsPreviewThumbnailEnabled = false;
         if (
           videoTracks[0] &&
           canvasRef.current &&
@@ -441,19 +439,17 @@ export const Player: FC = () => {
           // Probe before startPlayback: probing may time out and restart the
           // worker; that restart is safe here because the canvas hasn't been
           // transferred yet (startPlayback is below).
-          fileCanSeekInRealTime = await getCanSeekInRealTime({
+          fileIsPreviewThumbnailEnabled = await getIsPreviewThumbnailEnabled({
             decodeWorkerManager: decodeManagerRef.current,
             duration,
             isCancelled: () => cancelled,
           });
           if (cancelled) return;
 
-          if (fileCanSeekInRealTime) {
+          if (fileIsPreviewThumbnailEnabled) {
             thumbnailCacheRef.current = new PreviewThumbnailCache({
               decodeWorkerManager: decodeManagerRef.current,
-              duration,
             });
-            // thumbnailCacheRef.current.startAutoFill();
           }
 
           // Transfer the canvas (first call only) and set up the playback
@@ -499,7 +495,7 @@ export const Player: FC = () => {
             ? AudioVisualization.Off
             : AudioVisualization.FrequencyRealTime,
         );
-        setCanSeekInRealTime(fileCanSeekInRealTime);
+        setIsPreviewThumbnailEnabled(fileIsPreviewThumbnailEnabled);
         setCurrentAudioSink(audioSink);
         setDuration(duration);
         setFlipHorizontal(false);
@@ -867,7 +863,7 @@ export const Player: FC = () => {
       {currentPlayingFile && isFileLoaded && (
         <PlayerControlOverlay
           audioTracks={audioTracks}
-          canSeekInRealTime={canSeekInRealTime}
+          isPreviewThumbnailEnabled={isPreviewThumbnailEnabled}
           duration={duration ?? 0}
           fullscreenContainerRef={fullscreenContainerRef}
           getThumbnail={getThumbnailCallback}

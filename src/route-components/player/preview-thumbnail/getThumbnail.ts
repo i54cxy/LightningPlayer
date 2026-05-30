@@ -3,8 +3,8 @@ import { PreviewThumbnailCache } from "./PreviewThumbnailCache";
 
 /**
  * Fetches a thumbnail for the given timestamp via the cache. Returns
- * undefined when no cache is available — this means `canSeekInRealTime` is
- * false and thumbnails are disabled.
+ * undefined when no cache is available — this means preview thumbnails are
+ * disabled for this file.
  *
  * @param params.thumbnailCache - The thumbnail cache instance.
  * @param params.timestamp - The timestamp in seconds.
@@ -19,7 +19,7 @@ export const getThumbnail = async ({
 }): Promise<string | undefined> => {
   if (!thumbnailCache) return;
 
-  // Round timestamp to nearest second to match auto-fill cache entries.
+  // Round timestamp to nearest second for cache key consistency.
   const roundedTimestamp = Math.round(timestamp);
   const formattedTimestamp = formatTimestamp(roundedTimestamp);
 

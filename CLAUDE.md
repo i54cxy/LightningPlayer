@@ -122,7 +122,7 @@ A `hasVideo` state tracks whether the current file has video tracks. When `false
 
 An `isFileLoaded` state controls `PlayerControlOverlay` visibility. It is set to `false` at the start of every load (unmounting the overlay so the user cannot interact with stale controls) and to `true` in the final state-update batch after all async work completes.
 
-A `canSeekInRealTime` state gates preview thumbnail UI. It is set to `true` only after a decode performance probe (`getCanSeekInRealTime`) confirms the file can decode frames quickly enough for interactive seeking.
+An `isPreviewThumbnailEnabled` state gates preview thumbnail UI. It is set to `true` only after a decode performance probe (`getIsPreviewThumbnailEnabled`) confirms the file can decode frames quickly enough for interactive seeking — both per-frame (under 1s) and on average (under 250ms).
 
 #### PlaybackClock (`src/route-components/player/PlaybackClock.ts`)
 
@@ -286,25 +286,23 @@ Helper functions: `getProgressPercentageFromEvent` (`src/ui-components/level-two
 
 Thumbnail decoding runs in the decode worker via the `GetThumbnail` RPC. The worker uses a dedicated `thumbnailSink` (separate from the playback `videoSink` to avoid iterator pool conflicts), resizes via `OffscreenCanvas`, and encodes to JPEG via `convertToBlob()`. No main-thread `CanvasSink` is used for thumbnails. Preview thumbnails are gated by a decode performance probe — they are only enabled when the file's video can be decoded fast enough for interactive seeking.
 
-**Decode performance probe (`src/route-components/player/utils/getCanSeekInRealTime.ts`):**
+**Decode performance probe (`src/route-components/player/utils/getIsPreviewThumbnailEnabled.ts`):**
 
 - On file load, decodes sample frames at 10%, 33%, 66%, and 90% of the video duration using the decode worker's `probe()` RPC.
 - Each probe has a 1-second wall-clock timeout (`SINGLE_FRAME_THRESHOLD_MS`). If any single frame exceeds this, the function returns `false` immediately and the manager terminates the hung worker and respawns it.
-- Only when all samples pass does `canSeekInRealTime` become `true`, enabling the thumbnail cache and PreviewThumbnail UI.
+- Additionally, the average decode time across all samples must be under `AVERAGE_FRAME_THRESHOLD_MS` (250ms).
+- Only when all conditions pass does `isPreviewThumbnailEnabled` become `true`, enabling the thumbnail cache and PreviewThumbnail UI.
 
 **PreviewThumbnailCache (`src/route-components/player/preview-thumbnail/PreviewThumbnailCache.ts`)**:
 
 - LRU cache storing `{ timestamp → blob URL }` with a memory limit (default: 100MB).
 - Takes a `DecodeWorkerManager` directly and calls `getThumbnail` for decoding.
-- Background auto-fill: On file load, fetches thumbnails from timestamp 0.
-- On seek, fetch thumbnails on new timestamp.
-- Current auto-fill strategy is a bidirectional, linear fetch on rounded timestamps with 1s intervals.
-- Auto-fill stops completely when memory limit is reached.
+- Serves as a deduplication cache — prevents re-decoding the same timestamp on repeated seeks.
 - `dispose()` revokes all blob URLs and clears the cache.
 
 **getThumbnail (`src/route-components/player/preview-thumbnail/getThumbnail.ts`)**:
 
-- Rounds timestamp to nearest second for cache key consistency with auto-fill.
+- Rounds timestamp to nearest second for cache key consistency.
 
 **PreviewThumbnail (`src/ui-components/base/preview-thumbnail/PreviewThumbnail.tsx`)**:
 
