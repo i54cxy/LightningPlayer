@@ -21,6 +21,10 @@ import {
  * recover a hung worker, then re-loads the same file.
  */
 export class DecodeWorkerManager {
+  // Latest on-screen frame rate reported by the worker during playback (frames
+  // drawn per second). Read by the render loop for the FPS readout; 0 when
+  // paused or between files.
+  decodedFps = 0;
   // Set by dispose(); guards the probe-timeout respawn so a probe that times
   // out after disposal cannot resurrect a worker from a dead manager.
   private disposed = false;
@@ -175,6 +179,11 @@ export class DecodeWorkerManager {
   }
 
   setPlaying(isPlaying: boolean): void {
+    // No frames are drawn while paused, so the worker stops reporting; clear the
+    // stale rate immediately.
+    if (!isPlaying) {
+      this.decodedFps = 0;
+    }
     this.worker.postMessage({
       isPlaying,
       type: DecodeWorkerRequestType.SetPlaying,
@@ -203,6 +212,7 @@ export class DecodeWorkerManager {
    */
   terminateWorker(): void {
     if (this.disposed) return;
+    this.decodedFps = 0;
     this.rejectAllPendingThumbnails("Worker terminated.");
     this.worker.terminate();
     this.worker = this.spawnWorker();
@@ -230,7 +240,9 @@ export class DecodeWorkerManager {
     );
     worker.onmessage = (event: MessageEvent<DecodeWorkerEvent>) => {
       const message = event.data;
-      if (message.type === DecodeWorkerEventType.DecodeError) {
+      if (message.type === DecodeWorkerEventType.DecodedFrameRate) {
+        this.decodedFps = message.fps;
+      } else if (message.type === DecodeWorkerEventType.DecodeError) {
         console.error("DecodeWorkerManager: worker decode error:", message.error);
       } else if (message.type === DecodeWorkerEventType.GetThumbnailResult) {
         const pending = this.pendingThumbnails.get(message.requestId);

@@ -12,6 +12,7 @@ export enum DecodeWorkerRequestType {
 }
 
 export enum DecodeWorkerEventType {
+  DecodedFrameRate = "DecodedFrameRate",
   DecodeError = "DecodeError",
   GetThumbnailError = "GetThumbnailError",
   GetThumbnailResult = "GetThumbnailResult",
@@ -60,9 +61,10 @@ export type DecodeWorkerRequest =
 /**
  * Message sent from the decode worker to the main thread.
  * Each RPC-shaped request has a success and an error variant; the streaming
- * session emits DecodeError on failure.
+ * session emits DecodedFrameRate periodically and DecodeError on failure.
  */
 export type DecodeWorkerEvent =
+  | { fps: number; type: DecodeWorkerEventType.DecodedFrameRate }
   | { error: Error; type: DecodeWorkerEventType.DecodeError }
   | { error: Error; requestId: number; type: DecodeWorkerEventType.GetThumbnailError }
   | { blob: Blob; requestId: number; type: DecodeWorkerEventType.GetThumbnailResult }

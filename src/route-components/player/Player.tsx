@@ -9,7 +9,6 @@ import {
 } from "mediabunny";
 import { FC, useCallback, useEffect, useRef, useState } from "react";
 import { inputFilesState } from "../../shared/atoms/inputFilesState";
-import { playbackMessageState } from "../../shared/atoms/playbackMessageState";
 import {
   AudioVisualization,
   audioVisualizationState,
@@ -19,6 +18,7 @@ import { flipVerticalState } from "../../shared/atoms/player-controls/flipVertic
 import { isMutedState } from "../../shared/atoms/player-controls/isMutedState";
 import { playbackSpeedState } from "../../shared/atoms/player-controls/playbackSpeedState";
 import { rotationState } from "../../shared/atoms/player-controls/rotationState";
+import { showFpsState } from "../../shared/atoms/player-controls/showFpsState";
 import { volumeState } from "../../shared/atoms/player-controls/volumeState";
 import { titleBarTextState } from "../../shared/atoms/titleBarTextState";
 import { useDimensions } from "../../shared/hooks/useDimensions";
@@ -34,12 +34,14 @@ import { drawAudioFrequencyBars } from "./audio-visualization/drawAudioFrequency
 import { drawAudioWaveform } from "./audio-visualization/drawAudioWaveform";
 import { drawWaveformOverview } from "./audio-visualization/drawWaveformOverview";
 import { DecodeWorkerManager } from "./decode-worker/DecodeWorkerManager";
+import { updatePlaybackMessageDOM } from "./dom-updates/updatePlaybackMessageDOM";
 import { updateProgressBarDOM } from "./dom-updates/updateProgressBarDOM";
 import { updateTimestampDOM } from "./dom-updates/updateTimestampDOM";
 import { PlaybackClock } from "./PlaybackClock";
 import { audioVisualizationCanvasStyles } from "./Player.styles";
 import {
   AUDIO_ANALYSER_FFT_SIZE,
+  FPS_SAMPLE_INTERVAL_MS,
   WAVEFORM_OVERVIEW_WINDOW_SEC,
 } from "./Player.types";
 import { getThumbnail } from "./preview-thumbnail/getThumbnail";
@@ -49,7 +51,6 @@ import { getIsPreviewThumbnailEnabled } from "./utils/getIsPreviewThumbnailEnabl
 export const Player: FC = () => {
   const files = useAtomValue(inputFilesState);
   const currentPlayingFile = files[0];
-  const setPlaybackMessage = useSetAtom(playbackMessageState);
   const setTitleBarText = useSetAtom(titleBarTextState);
 
   const [audioVisualization, setAudioVisualization] = useAtom(
@@ -65,6 +66,8 @@ export const Player: FC = () => {
   const playbackSpeedRef = useRef(playbackSpeed);
   const [rotation, setRotation] = useAtom(rotationState);
   const rotationRef = useRef(rotation);
+  const showFps = useAtomValue(showFpsState);
+  const showFpsRef = useRef(showFps);
   const [volume, setVolume] = useAtom(volumeState);
 
   // All audio tracks from the current file.
@@ -73,6 +76,10 @@ export const Player: FC = () => {
 
   // Progress in seconds. Stored in ref to avoid React re-renders on every frame.
   const progressRef = useRef(0);
+  // Render-loop FPS sampling. Counts rAF-driven render() calls and divides by
+  // elapsed wall-clock time once per FPS_SAMPLE_INTERVAL_MS.
+  const fpsFrameCountRef = useRef(0);
+  const fpsLastSampleTimeRef = useRef(0);
   // AudioSink produces audioBufferIterators for audio playback.
   const [currentAudioSink, setCurrentAudioSink] = useState<AudioBufferSink>();
   const audioBufferIteratorRef =
@@ -312,6 +319,15 @@ export const Player: FC = () => {
     audioVisualizationRef.current = audioVisualization;
   }, [audioVisualization]);
 
+  // Sync showFpsRef for the render loop, and clear the readout when toggled off
+  // (the render loop only owns the message while visualization is off).
+  useEffect(() => {
+    showFpsRef.current = showFps;
+    if (!showFps && audioVisualizationRef.current === AudioVisualization.Off) {
+      updatePlaybackMessageDOM(undefined);
+    }
+  }, [showFps]);
+
   // Sync waveformOverviewWindowSecRef for stale-closure-safe access in the render loop.
   useEffect(() => {
     waveformOverviewWindowSecRef.current = waveformOverviewWindowSec;
@@ -549,9 +565,42 @@ export const Player: FC = () => {
   useEffect(() => {
     let cancelled = false;
 
+    // Reset FPS sampling for this loop instance.
+    fpsFrameCountRef.current = 0;
+    fpsLastSampleTimeRef.current = 0;
+
     const render = (requestFrame = true) => {
       if (cancelled) {
         return;
+      }
+
+      // Sample FPS from rAF-driven calls only (the 500ms interval below also
+      // calls render(false) but does not reflect display cadence). When audio
+      // visualization is off, the FPS readout owns the playback message; while
+      // it is on, the message effect owns it instead.
+      if (requestFrame) {
+        const now = performance.now();
+        if (fpsLastSampleTimeRef.current === 0) {
+          fpsLastSampleTimeRef.current = now;
+        }
+        fpsFrameCountRef.current += 1;
+        const elapsed = now - fpsLastSampleTimeRef.current;
+        if (elapsed >= FPS_SAMPLE_INTERVAL_MS) {
+          const renderFps = Math.round(
+            (fpsFrameCountRef.current * 1000) / elapsed,
+          );
+          fpsFrameCountRef.current = 0;
+          fpsLastSampleTimeRef.current = now;
+          if (
+            showFpsRef.current &&
+            audioVisualizationRef.current === AudioVisualization.Off
+          ) {
+            const decodedFps = decodeManagerRef.current?.decodedFps ?? 0;
+            updatePlaybackMessageDOM(
+              `Render ${renderFps} fps · Decoded ${decodedFps} fps`,
+            );
+          }
+        }
       }
 
       if (!analyserNodeRef.current) {
@@ -668,22 +717,22 @@ export const Player: FC = () => {
         audioVisualization === AudioVisualization.FrequencyRealTime) &&
       analyserNodeWindow
     ) {
-      setPlaybackMessage(`Time window: ${analyserNodeWindow} ms`);
+      updatePlaybackMessageDOM(`Time window: ${analyserNodeWindow} ms`);
     } else if (audioVisualization === AudioVisualization.OverviewWaveform) {
       if (!waveformOverviewData) {
-        setPlaybackMessage("Computing waveform overview...");
+        updatePlaybackMessageDOM("Computing waveform overview...");
       } else {
-        setPlaybackMessage(
+        updatePlaybackMessageDOM(
           `Time window: ${waveformOverviewWindowSec}s. Press +/- to zoom in/out.`,
         );
       }
     } else {
-      setPlaybackMessage(undefined);
+      // Audio visualization is off; the render loop owns the message (FPS).
+      updatePlaybackMessageDOM(undefined);
     }
   }, [
     audioVisualization,
     analyserNodeWindow,
-    setPlaybackMessage,
     waveformOverviewWindowSec,
     waveformOverviewData,
   ]);

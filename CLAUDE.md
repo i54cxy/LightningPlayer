@@ -233,8 +233,22 @@ To avoid React re-renders on every frame during playback, certain UI elements ar
 
 - **Progress bar** (`dom-updates/updateProgressBarDOM.ts`): Updates fill width and thumb position. IDs (`progressBarCurrentId`, `progressBarThumbId`) are exported from `PlayerControlOverlay.types.ts`.
 - **Timestamp** (`dom-updates/updateTimestampDOM.ts`): Updates the timestamp text. ID (`timestampTextId`) is exported from `Timestamp.tsx`.
+- **Playback message** (`dom-updates/updatePlaybackMessageDOM.ts`): Updates the top-left overlay text (audio-visualization info, or the FPS readout). The element stays mounted and is empty when cleared. ID (`playbackMessageTextId`) is exported from `PlaybackMessage.tsx`. Two writers coordinate via the audio-visualization mode: the message effect owns it while a visualization is active; the render loop owns it (writing the FPS readout) while visualization is `Off`.
 
-Both are called from the render loop in `Player.tsx`.
+These are called from the render loop in `Player.tsx`.
+
+##### FPS readout
+
+A developer overlay for diagnosing playback performance. Gated by the `showFps` atom (`src/shared/atoms/player-controls/showFpsState.ts`, persisted, default on) and shown only while audio visualization is `Off`; the playback message then displays `Render <n> fps · Decoded <n> fps`:
+
+- **Render fps**: the `requestAnimationFrame` render-loop rate, sampled every `FPS_SAMPLE_INTERVAL_MS` (500 ms) on the main thread. This is the upper bound on video FPS (the worker draws at most one frame per tick), so a drop indicates main-thread starvation.
+- **Decoded fps**: the actual on-screen frame rate, counted in the worker's `handleTick` (`reportDrawnFrame`) and posted to the main thread via the `DecodedFrameRate` event roughly once per second. `DecodeWorkerManager.decodedFps` caches the latest value; it is reset to 0 on pause and on worker recycle. A decoded rate below the source frame rate means frames are being skipped.
+
+The render loop owns the playback message only while `showFps` is on and visualization is `Off`; toggling `showFps` off clears it (synced via `showFpsRef`). The toggle lives in the Dev Info settings menu (see below).
+
+##### Dev Info menu
+
+`PlaybackSettingsDevInfoMenu` (`src/ui-components/base/playback-settings/PlaybackSettingsDevInfoMenu.tsx`) is a sub-menu of `PlaybackSettings` for developer overlays. Like the Flip menu, its items are independent toggles (chips with `data-toggled-on`) rather than a single-select list. It currently has one item, "Show FPS", bound to the `showFps` atom. Add new dev toggles here. The menu is reached from the "Dev Info" chip on the main settings menu and registered as `PlaybackSettingsMenu.DevInfo`.
 
 #### Player controls (`src/ui-components/level-two/player-control-overlay/PlayerControlOverlay.tsx`)
 
