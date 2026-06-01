@@ -5,7 +5,10 @@
       "Bash(pnpm build)",
       "Bash(pnpm tauri dev)",
       "Bash(pnpm tauri build)",
-      "Bash(git diff *)",
+      "PowerShell(pnpm build:*)",
+      "Bash(git diff:*)",
+      "Bash(git --no-pager diff:*)",
+      "Bash(git --no-pager log:*)",
       "Bash(git show:*)",
       "Bash(git status)"
     ]

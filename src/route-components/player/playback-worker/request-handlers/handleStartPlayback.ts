@@ -1,9 +1,9 @@
 import { toError } from "../../../../shared/utils/toError";
 import {
-  DecodeWorkerEventType,
-  DecodeWorkerRequest,
-  DecodeWorkerRequestType,
-} from "../decodeWorker.types";
+  PlaybackWorkerEventType,
+  PlaybackWorkerRequest,
+  PlaybackWorkerRequestType,
+} from "../playbackWorker.types";
 import { workerState } from "../workerState";
 
 declare const self: DedicatedWorkerGlobalScope;
@@ -12,8 +12,8 @@ export const handleStartPlayback = ({
   drawParams,
   offscreenCanvas,
 }: Extract<
-  DecodeWorkerRequest,
-  { type: DecodeWorkerRequestType.StartPlayback }
+  PlaybackWorkerRequest,
+  { type: PlaybackWorkerRequestType.StartPlayback }
 >) => {
   try {
     if (!workerState.videoSink) {
@@ -40,11 +40,11 @@ export const handleStartPlayback = ({
       nextFrame: undefined,
       offscreenCanvas,
     };
-    self.postMessage({ type: DecodeWorkerEventType.StartPlaybackComplete });
+    self.postMessage({ type: PlaybackWorkerEventType.StartPlaybackComplete });
   } catch (error) {
     self.postMessage({
       error: toError(error),
-      type: DecodeWorkerEventType.StartPlaybackError,
+      type: PlaybackWorkerEventType.StartPlaybackError,
     });
   }
 };

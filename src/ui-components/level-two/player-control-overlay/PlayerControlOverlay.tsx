@@ -15,6 +15,7 @@ import PauseIcon from "../../../assets/svgs/pause.svg?react";
 import PlayIcon from "../../../assets/svgs/play.svg?react";
 import SettingsIcon from "../../../assets/svgs/setting.svg?react";
 import { updateProgressBarDOM } from "../../../route-components/player/dom-updates/updateProgressBarDOM";
+import { updateTimestampDOM } from "../../../route-components/player/dom-updates/updateTimestampDOM";
 import { useDimensions } from "../../../shared/hooks/useDimensions";
 import { AudioTrackSelector } from "../../base/audio-track-selector/AudioTrackSelector";
 import { PlaybackSettings } from "../../base/playback-settings/PlaybackSettings";
@@ -40,6 +41,7 @@ import {
   progressBarContainerStyles,
   progressBarCurrentStyles,
   progressbarThumbStyles,
+  progressBarThumbnailProgressStyles,
   progressBarTrackFillStyles,
   progressBarTrackStyles,
   rightContainerStyles,
@@ -52,6 +54,7 @@ import {
   PlayerControlElement,
   progressBarCurrentId,
   progressBarThumbId,
+  progressBarThumbnailProgressId,
 } from "./PlayerControlOverlay.types";
 
 export interface IPlayerControlOverlayProps {
@@ -59,9 +62,9 @@ export interface IPlayerControlOverlayProps {
   audioTracks: InputAudioTrack[];
   /**
    * Whether preview thumbnails should be rendered. False when the decode
-   * performance probe reports the file is too slow to decode in real time.
+   * performance probe reports the file is too slow for interactive seeking.
    */
-  canSeekInRealTime: boolean;
+  isPreviewThumbnailEnabled: boolean;
   /**
    * Duration in seconds.
    */
@@ -71,11 +74,12 @@ export interface IPlayerControlOverlayProps {
    */
   fullscreenContainerRef: RefObject<HTMLDivElement | null>;
   /**
-   * Fetches thumbnail URL. Passed to PreviewThumbnail.
+   * Returns the cached thumbnail bitmap for the timestamp. Passed to
+   * PreviewThumbnail.
    *
    * @param timestamp in seconds.
    */
-  getThumbnail: (timestamp: number) => Promise<string | undefined>;
+  getThumbnail: (timestamp: number) => ImageBitmap | undefined;
   /**
    * Whether the current file has video tracks.
    * When there are no videos, there are no PreviewThumbnails, and
@@ -120,7 +124,7 @@ export interface IPlayerControlOverlayProps {
 
 export const PlayerControlOverlay: FC<IPlayerControlOverlayProps> = ({
   audioTracks,
-  canSeekInRealTime,
+  isPreviewThumbnailEnabled,
   duration,
   fullscreenContainerRef,
   getThumbnail,
@@ -354,6 +358,7 @@ export const PlayerControlOverlay: FC<IPlayerControlOverlayProps> = ({
       );
       progressRef.current = newProgress;
       updateProgressBarDOM({ duration, progress: newProgress });
+      updateTimestampDOM({ duration, progress: newProgress });
       isDraggingProgressBarRef.current = true;
     };
 
@@ -441,7 +446,7 @@ export const PlayerControlOverlay: FC<IPlayerControlOverlayProps> = ({
         >
           {/* Preview thumbnail - only for files with video and when the
               decode-performance probe says the file is fast enough. */}
-          {hasVideo && canSeekInRealTime && (
+          {hasVideo && isPreviewThumbnailEnabled && (
             <div
               css={[
                 previewThumbnailContainerStyles,
@@ -465,6 +470,12 @@ export const PlayerControlOverlay: FC<IPlayerControlOverlayProps> = ({
               ]}
             />
           </div>
+          {/* Preview-thumbnail fill-progress shade — always present, width set
+              imperatively (0 when not applicable). */}
+          <div
+            css={progressBarThumbnailProgressStyles}
+            id={progressBarThumbnailProgressId}
+          />
           <div css={progressBarCurrentStyles} id={progressBarCurrentId}></div>
           <div css={progressbarThumbStyles} id={progressBarThumbId} />
         </div>
@@ -507,30 +518,31 @@ export const PlayerControlOverlay: FC<IPlayerControlOverlayProps> = ({
             </Tooltip>
           </div>
           <div css={rightContainerStyles}>
-            <Tooltip
-              boundsRef={progressBarContainerRef}
-              css={tooltipContainerStyles}
-              showTooltip={isAudioTrackSelectorOpen ? false : undefined}
-              text={"Audio Track"}
-              tooltipStylesOverride={playerControlTooltipStyles}
-            >
-              <button
-                aria-label={"Audio Track"}
-                css={bottomControlsButtonStyles}
-                disabled={audioTracks.length === 0}
-                onClick={handleOnClickAudioTrackButton}
+            {audioTracks.length > 1 && (
+              <Tooltip
+                boundsRef={progressBarContainerRef}
+                css={tooltipContainerStyles}
+                showTooltip={isAudioTrackSelectorOpen ? false : undefined}
+                text={"Audio Track"}
+                tooltipStylesOverride={playerControlTooltipStyles}
               >
-                <HeadphonesSoundWaveIcon />
-              </button>
-              {isAudioTrackSelectorOpen && (
-                <AudioTrackSelector
-                  audioTracks={audioTracks}
-                  css={audioTrackSelectorPositionStyles}
-                  onSelectTrack={handleSelectAudioTrack}
-                  selectedTrackIndex={selectedAudioTrackIndex}
-                />
-              )}
-            </Tooltip>
+                <button
+                  aria-label={"Audio Track"}
+                  css={bottomControlsButtonStyles}
+                  onClick={handleOnClickAudioTrackButton}
+                >
+                  <HeadphonesSoundWaveIcon />
+                </button>
+                {isAudioTrackSelectorOpen && (
+                  <AudioTrackSelector
+                    audioTracks={audioTracks}
+                    css={audioTrackSelectorPositionStyles}
+                    onSelectTrack={handleSelectAudioTrack}
+                    selectedTrackIndex={selectedAudioTrackIndex}
+                  />
+                )}
+              </Tooltip>
+            )}
             <Tooltip
               boundsRef={progressBarContainerRef}
               css={tooltipContainerStyles}

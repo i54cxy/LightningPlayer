@@ -30,6 +30,9 @@ export const updateProgressBarDOM = ({
 
   const progressBarThumb = document.getElementById(progressBarThumbId);
   if (progressBarThumb) {
-    progressBarThumb.style.translate = `${percentage}cqw`;
+    // Center the thumb on the position: move to percentage of the container
+    // (cqw), then back by half the thumb's own width (translate % is relative to
+    // the element).
+    progressBarThumb.style.translate = `calc(${percentage}cqw - 50%)`;
   }
 };

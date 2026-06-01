@@ -1,8 +1,4 @@
-import { FC, useCallback, useRef, useState } from "react";
-import {
-  IDebouncedEffectCallbackParams,
-  useDebouncedEffect,
-} from "../../../shared/hooks/useDebouncedEffect";
+import { FC, useEffect, useRef } from "react";
 import { formatTimestamp } from "../../../shared/utils/formatTimestamp";
 import { Tooltip } from "../tooltip/Tooltip";
 import {
@@ -13,69 +9,53 @@ import {
   thumbnailStyles,
   tooltipStyles,
 } from "./PreviewThumbnail.styles";
+import {
+  previewThumbnailHeight,
+  previewThumbnailWidth,
+} from "./PreviewThumbnail.types";
 
 export interface IPreviewThumbnailProps {
   /**
-   * Fetches thumbnail URL for timestamp. Returns cached URL immediately if available. Can be expensive.
+   * Returns the pre-decoded thumbnail bitmap for the timestamp, or undefined if
+   * not cached. A pure in-memory lookup (no decode).
    *
    * @param timestamp in seconds.
    */
-  getThumbnail: (timestamp: number) => Promise<string | undefined>;
+  getThumbnail: (timestamp: number) => ImageBitmap | undefined;
   /**
    * timestamp in seconds.
    */
   timestamp: number;
 }
 
-const THUMBNAIL_DEBOUNCE_MS = 100;
-
 export const PreviewThumbnail: FC<IPreviewThumbnailProps> = ({
   getThumbnail,
   timestamp,
 }) => {
-  const imgRef = useRef<HTMLImageElement>(null);
-  // An non-undefined currentThumbnailTimestamp also means there's at least
-  // one image available to render.
-  const [currentThumbnailTimestamp, setCurrentThumbnailTimestamp] = useState<
-    number | undefined
-  >(undefined);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const roundedTimestamp = Math.round(timestamp);
+  // Pure memory lookup; the cache returns the same bitmap object per timestamp,
+  // so the effect below only redraws when the timestamp actually changes.
+  const bitmap = getThumbnail(roundedTimestamp);
 
-  // Fetch thumbnail when timestamp changes, debounced so only the last
-  // request in a rapid sequence actually triggers a fetch.
-  const fetchThumbnail = useCallback(
-    ({ cancelled }: IDebouncedEffectCallbackParams) => {
-      const fetch = async () => {
-        if (cancelled) {
-          return;
-        }
+  // Draw the cached bitmap (or clear, so the placeholder shows when absent).
+  useEffect(() => {
+    const ctx = canvasRef.current?.getContext("2d");
+    if (!ctx) {
+      return;
+    }
+    ctx.clearRect(0, 0, previewThumbnailWidth, previewThumbnailHeight);
+    if (bitmap) {
+      // The bitmap is already scaled to fit; draw it centered in the fixed box.
+      ctx.drawImage(
+        bitmap,
+        (previewThumbnailWidth - bitmap.width) / 2,
+        (previewThumbnailHeight - bitmap.height) / 2,
+      );
+    }
+  }, [bitmap]);
 
-        const url = await getThumbnail(roundedTimestamp);
-
-        if (cancelled) {
-          return;
-        }
-
-        if (url && imgRef.current) {
-          // Update img src imperatively - no React state delay.
-          imgRef.current.src = url;
-          imgRef.current.onload = () => {
-            setCurrentThumbnailTimestamp(roundedTimestamp);
-          };
-        }
-      };
-      fetch();
-    },
-    [getThumbnail, roundedTimestamp],
-  );
-
-  useDebouncedEffect(fetchThumbnail, THUMBNAIL_DEBOUNCE_MS);
-
-  const handleError = () => {
-    setCurrentThumbnailTimestamp(undefined);
-  };
-
-  const isLoading = currentThumbnailTimestamp !== roundedTimestamp;
+  const hasThumbnail = bitmap !== undefined;
 
   return (
     <Tooltip
@@ -84,17 +64,14 @@ export const PreviewThumbnail: FC<IPreviewThumbnailProps> = ({
       tooltipStylesOverride={tooltipStyles}
     >
       <div css={containerStyles}>
-        <div
-          css={placeholderStyles}
-          data-initialized={currentThumbnailTimestamp !== undefined}
-        />
-        <img
-          alt="Preview"
+        <div css={placeholderStyles} data-initialized={hasThumbnail} />
+        <canvas
           css={thumbnailStyles}
-          onError={handleError}
-          ref={imgRef}
+          height={previewThumbnailHeight}
+          ref={canvasRef}
+          width={previewThumbnailWidth}
         />
-        <div css={loadingOverlayStyles} data-loading={isLoading}>
+        <div css={loadingOverlayStyles} data-loading={!hasThumbnail}>
           <div css={loadingDotStyles} />
           <div css={loadingDotStyles} />
           <div css={loadingDotStyles} />

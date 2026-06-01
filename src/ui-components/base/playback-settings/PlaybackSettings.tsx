@@ -1,5 +1,6 @@
 import { FC, useState } from "react";
 import ChevronRightIcon from "../../../assets/svgs/chevron-right.svg?react";
+import DeveloperToolsIcon from "../../../assets/svgs/developer-tools.svg?react";
 import FlipHorizontalIcon from "../../../assets/svgs/flip-horizontal.svg?react";
 import RotateClockwiseIcon from "../../../assets/svgs/rotate-clockwise.svg?react";
 import SoundWaveCircleSparkleIcon from "../../../assets/svgs/sound-wave-circle-sparkle.svg?react";
@@ -8,6 +9,7 @@ import { playbackSettingsContainerStyles } from "./PlaybackSettings.styles";
 import { PlaybackSettingsMenu } from "./PlaybackSettings.types";
 import { PlaybackSettingsAudioVisualizationMenu } from "./PlaybackSettingsAudioVisualizationMenu";
 import { PlaybackSettingsChip } from "./PlaybackSettingsChip";
+import { PlaybackSettingsDevToolsMenu } from "./PlaybackSettingsDevToolsMenu";
 import { PlaybackSettingsFlipMenu } from "./PlaybackSettingsFlipMenu";
 import { PlaybackSettingsRotationMenu } from "./PlaybackSettingsRotationMenu";
 import { PlaybackSettingsSpeedMenu } from "./PlaybackSettingsSpeedMenu";
@@ -34,10 +36,15 @@ export const PlaybackSettings: FC<IPlaybackSettingsProps> = ({
   const handleAudioVisualizationOnBack = () =>
     setCurrentMenu(PlaybackSettingsMenu.Main);
 
+  const handleDevToolsOnBack = () => setCurrentMenu(PlaybackSettingsMenu.Main);
+
   const handleFlipOnBack = () => setCurrentMenu(PlaybackSettingsMenu.Main);
 
   const handleOnAudioVisualizationClick = () =>
     setCurrentMenu(PlaybackSettingsMenu.AudioVisualization);
+
+  const handleOnDevToolsClick = () =>
+    setCurrentMenu(PlaybackSettingsMenu.DevTools);
 
   const handleOnFlipClick = () => setCurrentMenu(PlaybackSettingsMenu.Flip);
 
@@ -82,12 +89,21 @@ export const PlaybackSettings: FC<IPlaybackSettingsProps> = ({
             rightIcon={<ChevronRightIcon />}
             text="Speed"
           />
+          <PlaybackSettingsChip
+            icon={<DeveloperToolsIcon />}
+            onClick={handleOnDevToolsClick}
+            rightIcon={<ChevronRightIcon />}
+            text="Dev Tools"
+          />
         </>
       )}
       {currentMenu === PlaybackSettingsMenu.AudioVisualization && (
         <PlaybackSettingsAudioVisualizationMenu
           onBack={handleAudioVisualizationOnBack}
         />
+      )}
+      {currentMenu === PlaybackSettingsMenu.DevTools && (
+        <PlaybackSettingsDevToolsMenu onBack={handleDevToolsOnBack} />
       )}
       {currentMenu === PlaybackSettingsMenu.Flip && (
         <PlaybackSettingsFlipMenu onBack={handleFlipOnBack} />

@@ -9,16 +9,17 @@ import {
 } from "mediabunny";
 import { FC, useCallback, useEffect, useRef, useState } from "react";
 import { inputFilesState } from "../../shared/atoms/inputFilesState";
-import { playbackMessageState } from "../../shared/atoms/playbackMessageState";
 import {
   AudioVisualization,
   audioVisualizationState,
 } from "../../shared/atoms/player-controls/audioVisualizationState";
+import { enablePreviewThumbnailsState } from "../../shared/atoms/player-controls/enablePreviewThumbnailsState";
 import { flipHorizontalState } from "../../shared/atoms/player-controls/flipHorizontalState";
 import { flipVerticalState } from "../../shared/atoms/player-controls/flipVerticalState";
 import { isMutedState } from "../../shared/atoms/player-controls/isMutedState";
 import { playbackSpeedState } from "../../shared/atoms/player-controls/playbackSpeedState";
 import { rotationState } from "../../shared/atoms/player-controls/rotationState";
+import { showFpsState } from "../../shared/atoms/player-controls/showFpsState";
 import { volumeState } from "../../shared/atoms/player-controls/volumeState";
 import { titleBarTextState } from "../../shared/atoms/titleBarTextState";
 import { useDimensions } from "../../shared/hooks/useDimensions";
@@ -27,29 +28,29 @@ import { isTruthy } from "../../shared/utils/isTruthy";
 import { FullscreenContainer } from "../../ui-components/base/fullscreen-container/FullscreenContainer";
 import { PlaybackMessage } from "../../ui-components/base/playback-message/PlaybackMessage";
 import { PlayerControlOverlay } from "../../ui-components/level-two/player-control-overlay/PlayerControlOverlay";
-import { runAudioIterator } from "./audio/runAudioIterator";
 import { computeAnalyserWindowMs } from "./audio-visualization/computeAnalyserWindowMs";
 import { computeWaveformOverview } from "./audio-visualization/computeWaveformOverview";
 import { drawAudioFrequencyBars } from "./audio-visualization/drawAudioFrequencyBars";
 import { drawAudioWaveform } from "./audio-visualization/drawAudioWaveform";
 import { drawWaveformOverview } from "./audio-visualization/drawWaveformOverview";
+import { runAudioIterator } from "./audio/runAudioIterator";
 import { DecodeWorkerManager } from "./decode-worker/DecodeWorkerManager";
+import { updatePlaybackMessageDOM } from "./dom-updates/updatePlaybackMessageDOM";
 import { updateProgressBarDOM } from "./dom-updates/updateProgressBarDOM";
+import { updateThumbnailProgressBarDOM } from "./dom-updates/updateThumbnailProgressBarDOM";
 import { updateTimestampDOM } from "./dom-updates/updateTimestampDOM";
 import { PlaybackClock } from "./PlaybackClock";
 import { audioVisualizationCanvasStyles } from "./Player.styles";
 import {
   AUDIO_ANALYSER_FFT_SIZE,
+  FPS_SAMPLE_INTERVAL_MS,
   WAVEFORM_OVERVIEW_WINDOW_SEC,
 } from "./Player.types";
-import { getThumbnail } from "./preview-thumbnail/getThumbnail";
 import { PreviewThumbnailCache } from "./preview-thumbnail/PreviewThumbnailCache";
-import { getCanSeekInRealTime } from "./utils/getCanSeekInRealTime";
 
 export const Player: FC = () => {
   const files = useAtomValue(inputFilesState);
   const currentPlayingFile = files[0];
-  const setPlaybackMessage = useSetAtom(playbackMessageState);
   const setTitleBarText = useSetAtom(titleBarTextState);
 
   const [audioVisualization, setAudioVisualization] = useAtom(
@@ -63,8 +64,12 @@ export const Player: FC = () => {
   const [isMuted, setIsMuted] = useAtom(isMutedState);
   const [playbackSpeed, setPlaybackSpeed] = useAtom(playbackSpeedState);
   const playbackSpeedRef = useRef(playbackSpeed);
+  const enablePreviewThumbnails = useAtomValue(enablePreviewThumbnailsState);
+  const enablePreviewThumbnailsRef = useRef(enablePreviewThumbnails);
   const [rotation, setRotation] = useAtom(rotationState);
   const rotationRef = useRef(rotation);
+  const showFps = useAtomValue(showFpsState);
+  const showFpsRef = useRef(showFps);
   const [volume, setVolume] = useAtom(volumeState);
 
   // All audio tracks from the current file.
@@ -73,28 +78,33 @@ export const Player: FC = () => {
 
   // Progress in seconds. Stored in ref to avoid React re-renders on every frame.
   const progressRef = useRef(0);
+  // Render-loop FPS sampling. Counts rAF-driven render() calls and divides by
+  // elapsed wall-clock time once per FPS_SAMPLE_INTERVAL_MS.
+  const fpsFrameCountRef = useRef(0);
+  const fpsLastSampleTimeRef = useRef(0);
   // AudioSink produces audioBufferIterators for audio playback.
   const [currentAudioSink, setCurrentAudioSink] = useState<AudioBufferSink>();
   const audioBufferIteratorRef =
     useRef<AsyncGenerator<WrappedAudioBuffer, void, unknown>>(undefined);
-  // Owns the video decode worker and the on-screen video canvas (transferred via
-  // transferControlToOffscreen on the first file load that has a video track).
+  // Owns the playback + thumbnail decode workers. Persists for the Player's
+  // lifetime; recycles each worker per file. See canvasRef below for the
+  // canvas-transfer lifecycle.
   const decodeManagerRef = useRef<DecodeWorkerManager>(undefined);
   // Cache for pre-fetched thumbnails.
   const thumbnailCacheRef = useRef<PreviewThumbnailCache>(undefined);
+  // Cancels the current thumbnail prefetch session; undefined when there is no
+  // session (the toggle effect reads this to avoid a double-start).
+  const thumbnailSessionCancelRef = useRef<(() => void) | undefined>(undefined);
+  // Index of the current file's video track, for the thumbnail worker.
+  const videoTrackIndexRef = useRef(0);
   // Total duration in seconds.
   const [duration, setDuration] = useState<number | undefined>(undefined);
 
   // Whether the current file has video tracks.
   const [hasVideo, setHasVideo] = useState(false);
-  // Whether the file-load sequence (track discovery, decode probe, canvas
-  // transfer) has finished. Controls PlayerControlOverlay visibility.
+  // Whether the file-load sequence (track discovery, canvas transfer) has
+  // finished. Controls PlayerControlOverlay visibility.
   const [isFileLoaded, setIsFileLoaded] = useState(false);
-  // Whether the decode performance probe reports the file can be decoded
-  // fast enough for real-time seeking. Gates the thumbnail cache and the
-  // PreviewThumbnail UI.
-  const [canSeekInRealTime, setCanSeekInRealTime] =
-    useState(false);
   // For real-time audio visualization.
   const [analyserNodeWindow, setAnalyserNodeWindow] = useState<
     number | undefined
@@ -134,9 +144,24 @@ export const Player: FC = () => {
 
   const fullscreenContainerRef = useRef<HTMLDivElement>(null);
   // Ref to the HTML Canvas element for rendering. Its control is transferred
-  // to the decode worker via transferControlToOffscreen on the first file load
-  // with video — after which the main thread cannot draw to or read from it.
+  // to the decode worker via transferControlToOffscreen during startPlayback —
+  // after which the main thread cannot draw to or read from it, and the element
+  // can never be transferred again. Each file load terminates the old worker
+  // and spawns a new one, so we remount the element (via the canvasGeneration
+  // key below) on every file change to hand the new worker a fresh, never-
+  // transferred canvas.
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  // Used as the <canvas> React key to force a fresh element (see canvasRef
+  // above). Adjusted during render via the React "store info from previous
+  // render" pattern: when the file changes we bump the generation, which
+  // re-renders and remounts the canvas before the load effect runs.
+  const [canvasGeneration, setCanvasGeneration] = useState(0);
+  const [previousLoadedFile, setPreviousLoadedFile] =
+    useState(currentPlayingFile);
+  if (previousLoadedFile !== currentPlayingFile) {
+    setPreviousLoadedFile(currentPlayingFile);
+    setCanvasGeneration((generation) => generation + 1);
+  }
   // Used for drawing and updated by resize handler.
   const screenDimensionsRef = useRef<IDimensions>(undefined);
   const screenDimensions = useDimensions(fullscreenContainerRef);
@@ -150,10 +175,9 @@ export const Player: FC = () => {
     queuedAudioNodesRef.current.clear();
     // Dispose audio iterator.
     audioBufferIteratorRef.current?.return();
-    // Dispose thumbnail cache.
-    thumbnailCacheRef.current?.dispose();
-    // Reset the worker (clears its iterator + canvas pixels).
-    decodeManagerRef.current?.reset();
+    // The decode workers and the thumbnail cache are recycled elsewhere: the
+    // playback worker in the load effect cleanup, the thumbnail worker + cache
+    // in stopThumbnailSession.
   };
 
   const playImpl = async () => {
@@ -235,8 +259,6 @@ export const Player: FC = () => {
       progressRef.current = time;
       updateProgressBarDOM({ duration, progress: time });
       playbackClockRef.current.seek(time);
-      // thumbnailCacheRef.current?.startAutoFill(time);
-
       // Tell the worker to seek and draw at the new position. The worker no-ops
       // if no playback session is set up (audio-only files).
       if (hasVideo) {
@@ -297,6 +319,15 @@ export const Player: FC = () => {
     audioVisualizationRef.current = audioVisualization;
   }, [audioVisualization]);
 
+  // Sync showFpsRef for the render loop, and clear the readout when toggled off
+  // (the render loop only owns the message while visualization is off).
+  useEffect(() => {
+    showFpsRef.current = showFps;
+    if (!showFps && audioVisualizationRef.current === AudioVisualization.Off) {
+      updatePlaybackMessageDOM(undefined);
+    }
+  }, [showFps]);
+
   // Sync waveformOverviewWindowSecRef for stale-closure-safe access in the render loop.
   useEffect(() => {
     waveformOverviewWindowSecRef.current = waveformOverviewWindowSec;
@@ -316,6 +347,72 @@ export const Player: FC = () => {
     });
   }, [flipHorizontal, flipVertical, rotation]);
 
+  // Stops the current thumbnail prefetch session: cancels in-flight work,
+  // recycles the thumbnail worker, resets the cache and the progress shade.
+  const stopThumbnailSession = useCallback(() => {
+    thumbnailSessionCancelRef.current?.();
+    thumbnailSessionCancelRef.current = undefined;
+    decodeManagerRef.current?.recycleThumbnailWorker();
+    thumbnailCacheRef.current?.reset();
+    thumbnailCacheRef.current = undefined;
+    updateThumbnailProgressBarDOM(0);
+  }, []);
+
+  // Starts a thumbnail prefetch session on the thumbnail worker: loads the file
+  // and fills the cache, in parallel with playback. Callers guarantee a
+  // preceding stop (load-effect cleanup, or the toggle effect's sessionActive
+  // guard), so this does not stop first itself.
+  const startThumbnailSession = useCallback(
+    ({
+      blob,
+      duration,
+      videoTrackIndex,
+    }: {
+      blob: Blob;
+      duration: number;
+      videoTrackIndex: number;
+    }) => {
+      const manager = decodeManagerRef.current;
+      if (!manager) {
+        return;
+      }
+      let cancelled = false;
+      thumbnailSessionCancelRef.current = () => {
+        cancelled = true;
+      };
+
+      const run = async () => {
+        try {
+          await manager.loadFileForPreviewThumbnails({ blob, videoTrackIndex });
+          if (cancelled) return;
+
+          const cache = new PreviewThumbnailCache();
+          thumbnailCacheRef.current = cache;
+          await manager.fillThumbnails({
+            cache,
+            duration,
+            onProgress: (fraction) => {
+              if (!cancelled) {
+                updateThumbnailProgressBarDOM(fraction);
+              }
+            },
+          });
+          // Some seconds may yield no frame, so received < expected; the fill is
+          // nonetheless complete, so fill the shade.
+          if (!cancelled) {
+            updateThumbnailProgressBarDOM(1);
+          }
+        } catch (error) {
+          if (!cancelled) {
+            console.error("startThumbnailSession: failed.", error);
+          }
+        }
+      };
+      void run();
+    },
+    [],
+  );
+
   // Load files.
   useEffect(() => {
     let cancelled = false;
@@ -328,10 +425,9 @@ export const Player: FC = () => {
       setIsFileLoaded(false);
 
       if (!currentPlayingFile) {
-        // No file (e.g., after Ctrl+R reload). Clean up and reset state.
+        // No file (e.g., after Ctrl+R reload). Clean up and reset state. The
+        // load effect cleanup already stopped the thumbnail session.
         cleanupPlayback();
-        thumbnailCacheRef.current = undefined;
-        setCanSeekInRealTime(false);
         setCurrentAudioSink(undefined);
         setDuration(undefined);
         setHasVideo(false);
@@ -418,47 +514,28 @@ export const Player: FC = () => {
         const playbackClock = new PlaybackClock(audioContext);
         playbackClockRef.current = playbackClock;
 
-        // Initialize the decode worker for this file (only if there's a video
-        // track). The same worker handles both the probe RPC, thumbnail
-        // fetching, and the streaming playback session.
-        thumbnailCacheRef.current = undefined;
-        let fileCanSeekInRealTime = false;
+        // Initialize the playback worker for this file (only if there's a video
+        // track), then kick off the background thumbnail prefetch session.
         if (
           videoTracks[0] &&
           canvasRef.current &&
           screenDimensionsRef.current
         ) {
           const videoTrackIndex = allTracks.indexOf(videoTracks[0]);
+          videoTrackIndexRef.current = videoTrackIndex;
           if (!decodeManagerRef.current) {
             decodeManagerRef.current = new DecodeWorkerManager();
           }
-          await decodeManagerRef.current.loadFile({
+          const decodeManager = decodeManagerRef.current;
+          await decodeManager.loadFileForPlayback({
             blob: currentPlayingFile,
             videoTrackIndex,
           });
           if (cancelled) return;
 
-          // Probe before startPlayback: probing may time out and restart the
-          // worker; that restart is safe here because the canvas hasn't been
-          // transferred yet (startPlayback is below).
-          fileCanSeekInRealTime = await getCanSeekInRealTime({
-            decodeWorkerManager: decodeManagerRef.current,
-            duration,
-            isCancelled: () => cancelled,
-          });
-          if (cancelled) return;
-
-          if (fileCanSeekInRealTime) {
-            thumbnailCacheRef.current = new PreviewThumbnailCache({
-              decodeWorkerManager: decodeManagerRef.current,
-              duration,
-            });
-            // thumbnailCacheRef.current.startAutoFill();
-          }
-
           // Transfer the canvas (first call only) and set up the playback
           // session in the worker.
-          await decodeManagerRef.current.startPlayback({
+          await decodeManager.startPlayback({
             canvasElement: canvasRef.current,
             drawParams: {
               flipHorizontal: flipHorizontalRef.current,
@@ -468,6 +545,17 @@ export const Player: FC = () => {
             },
           });
           if (cancelled) return;
+
+          // Kick off the background thumbnail prefetch (thumbnail worker, in
+          // parallel with playback) when preview is enabled. Live toggles are
+          // handled by the toggle effect below.
+          if (enablePreviewThumbnailsRef.current) {
+            startThumbnailSession({
+              blob: currentPlayingFile,
+              duration,
+              videoTrackIndex,
+            });
+          }
         }
 
         // Kick off whole-file peak computation in the background.
@@ -499,7 +587,6 @@ export const Player: FC = () => {
             ? AudioVisualization.Off
             : AudioVisualization.FrequencyRealTime,
         );
-        setCanSeekInRealTime(fileCanSeekInRealTime);
         setCurrentAudioSink(audioSink);
         setDuration(duration);
         setFlipHorizontal(false);
@@ -517,6 +604,13 @@ export const Player: FC = () => {
 
     return () => {
       cancelled = true;
+      // Kill everything from the old file: recycle the playback worker (instantly
+      // stopping its decode, paired with a fresh canvas element on the next load)
+      // and stop the thumbnail prefetch session (recycles the thumbnail worker +
+      // resets the cache). The manager persists for the Player's lifetime and is
+      // disposed on unmount.
+      decodeManagerRef.current?.recyclePlaybackWorker();
+      stopThumbnailSession();
     };
   }, [
     currentPlayingFile,
@@ -525,15 +619,73 @@ export const Player: FC = () => {
     setFlipVertical,
     setPlaybackSpeed,
     setRotation,
+    startThumbnailSession,
+    stopThumbnailSession,
   ]);
+
+  // React to the user toggling "Show Preview". File-load start/stop is handled
+  // by the load effect (which has the correct duration + track index); this only
+  // handles live toggles. The `sessionActive` guard prevents a double-start.
+  useEffect(() => {
+    enablePreviewThumbnailsRef.current = enablePreviewThumbnails;
+    if (!decodeManagerRef.current || !hasVideo || !currentPlayingFile) {
+      return;
+    }
+    const sessionActive = thumbnailSessionCancelRef.current !== undefined;
+    if (enablePreviewThumbnails && !sessionActive && duration !== undefined) {
+      startThumbnailSession({
+        blob: currentPlayingFile,
+        duration,
+        videoTrackIndex: videoTrackIndexRef.current,
+      });
+    } else if (!enablePreviewThumbnails && sessionActive) {
+      stopThumbnailSession();
+    }
+    // Only react to the toggle; the other values are read fresh on each toggle
+    // (this effect re-runs on the render that changed the atom).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enablePreviewThumbnails]);
 
   // Start render loop after file is loaded.
   useEffect(() => {
     let cancelled = false;
 
+    // Reset FPS sampling for this loop instance.
+    fpsFrameCountRef.current = 0;
+    fpsLastSampleTimeRef.current = 0;
+
     const render = (requestFrame = true) => {
       if (cancelled) {
         return;
+      }
+
+      // Sample FPS from rAF-driven calls only (the 500ms interval below also
+      // calls render(false) but does not reflect display cadence). When audio
+      // visualization is off, the FPS readout owns the playback message; while
+      // it is on, the message effect owns it instead.
+      if (requestFrame) {
+        const now = performance.now();
+        if (fpsLastSampleTimeRef.current === 0) {
+          fpsLastSampleTimeRef.current = now;
+        }
+        fpsFrameCountRef.current += 1;
+        const elapsed = now - fpsLastSampleTimeRef.current;
+        if (elapsed >= FPS_SAMPLE_INTERVAL_MS) {
+          const renderFps = Math.round(
+            (fpsFrameCountRef.current * 1000) / elapsed,
+          );
+          fpsFrameCountRef.current = 0;
+          fpsLastSampleTimeRef.current = now;
+          if (
+            showFpsRef.current &&
+            audioVisualizationRef.current === AudioVisualization.Off
+          ) {
+            const decodedFps = decodeManagerRef.current?.decodedFps ?? 0;
+            updatePlaybackMessageDOM(
+              `Render ${renderFps} fps · Decoded ${decodedFps} fps`,
+            );
+          }
+        }
       }
 
       if (!analyserNodeRef.current) {
@@ -625,10 +777,11 @@ export const Player: FC = () => {
 
     // Also call the render function on an interval to make sure the video keeps
     // updating even if the tab isn't visible.
-    setInterval(() => render(false), 500);
+    const intervalId = setInterval(() => render(false), 500);
 
     return () => {
       cancelled = true;
+      clearInterval(intervalId);
     };
   }, [duration]);
 
@@ -649,22 +802,22 @@ export const Player: FC = () => {
         audioVisualization === AudioVisualization.FrequencyRealTime) &&
       analyserNodeWindow
     ) {
-      setPlaybackMessage(`Time window: ${analyserNodeWindow} ms`);
+      updatePlaybackMessageDOM(`Time window: ${analyserNodeWindow} ms`);
     } else if (audioVisualization === AudioVisualization.OverviewWaveform) {
       if (!waveformOverviewData) {
-        setPlaybackMessage("Computing waveform overview...");
+        updatePlaybackMessageDOM("Computing waveform overview...");
       } else {
-        setPlaybackMessage(
+        updatePlaybackMessageDOM(
           `Time window: ${waveformOverviewWindowSec}s. Press +/- to zoom in/out.`,
         );
       }
     } else {
-      setPlaybackMessage(undefined);
+      // Audio visualization is off; the render loop owns the message (FPS).
+      updatePlaybackMessageDOM(undefined);
     }
   }, [
     audioVisualization,
     analyserNodeWindow,
-    setPlaybackMessage,
     waveformOverviewWindowSec,
     waveformOverviewData,
   ]);
@@ -838,25 +991,21 @@ export const Player: FC = () => {
   };
 
   /**
-   * Fetches thumbnail URL at timestamp with the the thumbnail cache.
+   * Returns the pre-decoded thumbnail bitmap for the timestamp from the cache
+   * (a pure memory lookup, rounded to the second to match the fill keys).
    * Supplied to PreviewThumbnail.
    *
    * @param timestamp in seconds.
    */
   const getThumbnailCallback = useCallback(
-    async (timestamp: number) => {
-      return await getThumbnail({
-        thumbnailCache: thumbnailCacheRef.current,
-        timestamp,
-      });
-    },
-
+    (timestamp: number) =>
+      thumbnailCacheRef.current?.get(Math.round(timestamp)),
     [],
   );
 
   return (
     <FullscreenContainer ref={fullscreenContainerRef}>
-      <canvas ref={canvasRef} />
+      <canvas key={canvasGeneration} ref={canvasRef} />
       <canvas
         css={audioVisualizationCanvasStyles}
         data-visible={audioVisualization !== AudioVisualization.Off}
@@ -867,7 +1016,6 @@ export const Player: FC = () => {
       {currentPlayingFile && isFileLoaded && (
         <PlayerControlOverlay
           audioTracks={audioTracks}
-          canSeekInRealTime={canSeekInRealTime}
           duration={duration ?? 0}
           fullscreenContainerRef={fullscreenContainerRef}
           getThumbnail={getThumbnailCallback}
@@ -875,6 +1023,7 @@ export const Player: FC = () => {
           isDraggingProgressBarRef={isDraggingProgressBarRef}
           isMuted={isMuted}
           isPlaying={isPlaying}
+          isPreviewThumbnailEnabled={enablePreviewThumbnails}
           onMuteToggle={handleMuteToggle}
           onSelectAudioTrack={handleSelectAudioTrack}
           onVolumeChange={handleVolumeChange}

@@ -1,15 +1,15 @@
 import {
-  DecodeWorkerRequest,
-  DecodeWorkerRequestType,
-} from "../decodeWorker.types";
+  PlaybackWorkerRequest,
+  PlaybackWorkerRequestType,
+} from "../playbackWorker.types";
 import { drawAndRecordFrame } from "../utils/drawAndRecordFrame";
 import { workerState } from "../workerState";
 
 export const handleUpdateDrawParams = ({
   partial,
 }: Extract<
-  DecodeWorkerRequest,
-  { type: DecodeWorkerRequestType.UpdateDrawParams }
+  PlaybackWorkerRequest,
+  { type: PlaybackWorkerRequestType.UpdateDrawParams }
 >) => {
   const { playbackState } = workerState;
   if (!playbackState) return;

@@ -131,6 +131,22 @@ export const progressBarTrackFillStyles = (theme: Theme) =>
     },
   });
 
+export const progressBarThumbnailProgressStyles = (theme: Theme) =>
+  css({
+    backgroundColor: theme.colors.playerControls.progressBar.thumbnailProgress,
+    borderRadius: progressBarTrackHeight / 2,
+    height: progressBarTrackHeight,
+    position: "absolute",
+    transition: `transform ${theme.motion.playerControls.progressBar.transitionDuration} ${theme.motion.playerControls.progressBar.transitionTimingFunction}`,
+    width: "0%",
+
+    "[data-is-progress-bar-hovered=true] > &": {
+      transform: `scaleY(${
+        progressBarTrackExpandedHeight / progressBarTrackHeight
+      })`,
+    },
+  });
+
 export const buttonControlsContainerStyles = css({
   alignItems: "center",
   display: "grid",
