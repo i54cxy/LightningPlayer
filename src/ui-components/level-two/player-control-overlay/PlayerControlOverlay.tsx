@@ -15,6 +15,7 @@ import PauseIcon from "../../../assets/svgs/pause.svg?react";
 import PlayIcon from "../../../assets/svgs/play.svg?react";
 import SettingsIcon from "../../../assets/svgs/setting.svg?react";
 import { updateProgressBarDOM } from "../../../route-components/player/dom-updates/updateProgressBarDOM";
+import { updateTimestampDOM } from "../../../route-components/player/dom-updates/updateTimestampDOM";
 import { useDimensions } from "../../../shared/hooks/useDimensions";
 import { AudioTrackSelector } from "../../base/audio-track-selector/AudioTrackSelector";
 import { PlaybackSettings } from "../../base/playback-settings/PlaybackSettings";
@@ -357,6 +358,7 @@ export const PlayerControlOverlay: FC<IPlayerControlOverlayProps> = ({
       );
       progressRef.current = newProgress;
       updateProgressBarDOM({ duration, progress: newProgress });
+      updateTimestampDOM({ duration, progress: newProgress });
       isDraggingProgressBarRef.current = true;
     };
 
