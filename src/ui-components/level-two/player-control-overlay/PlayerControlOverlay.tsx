@@ -40,6 +40,7 @@ import {
   progressBarContainerStyles,
   progressBarCurrentStyles,
   progressbarThumbStyles,
+  progressBarThumbnailProgressStyles,
   progressBarTrackFillStyles,
   progressBarTrackStyles,
   rightContainerStyles,
@@ -52,6 +53,7 @@ import {
   PlayerControlElement,
   progressBarCurrentId,
   progressBarThumbId,
+  progressBarThumbnailProgressId,
 } from "./PlayerControlOverlay.types";
 
 export interface IPlayerControlOverlayProps {
@@ -71,11 +73,12 @@ export interface IPlayerControlOverlayProps {
    */
   fullscreenContainerRef: RefObject<HTMLDivElement | null>;
   /**
-   * Fetches thumbnail URL. Passed to PreviewThumbnail.
+   * Returns the cached thumbnail bitmap for the timestamp. Passed to
+   * PreviewThumbnail.
    *
    * @param timestamp in seconds.
    */
-  getThumbnail: (timestamp: number) => Promise<string | undefined>;
+  getThumbnail: (timestamp: number) => ImageBitmap | undefined;
   /**
    * Whether the current file has video tracks.
    * When there are no videos, there are no PreviewThumbnails, and
@@ -465,6 +468,12 @@ export const PlayerControlOverlay: FC<IPlayerControlOverlayProps> = ({
               ]}
             />
           </div>
+          {/* Preview-thumbnail fill-progress shade — always present, width set
+              imperatively (0 when not applicable). */}
+          <div
+            css={progressBarThumbnailProgressStyles}
+            id={progressBarThumbnailProgressId}
+          />
           <div css={progressBarCurrentStyles} id={progressBarCurrentId}></div>
           <div css={progressbarThumbStyles} id={progressBarThumbId} />
         </div>

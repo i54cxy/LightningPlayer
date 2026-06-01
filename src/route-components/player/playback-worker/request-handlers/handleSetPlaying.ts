@@ -1,14 +1,14 @@
 import {
-  DecodeWorkerRequest,
-  DecodeWorkerRequestType,
-} from "../decodeWorker.types";
+  PlaybackWorkerRequest,
+  PlaybackWorkerRequestType,
+} from "../playbackWorker.types";
 import { workerState } from "../workerState";
 
 export const handleSetPlaying = ({
   isPlaying,
 }: Extract<
-  DecodeWorkerRequest,
-  { type: DecodeWorkerRequestType.SetPlaying }
+  PlaybackWorkerRequest,
+  { type: PlaybackWorkerRequestType.SetPlaying }
 >) => {
   if (!workerState.playbackState) return;
   workerState.playbackState.isPlaying = isPlaying;

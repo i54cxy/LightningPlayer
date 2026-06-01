@@ -4,6 +4,9 @@ export const progressBarCurrentId = "progress-bar-current";
 /** Progress bar thumb element ID for imperative DOM updates. */
 export const progressBarThumbId = "progress-bar-thumb";
 
+/** Preview-thumbnail fill-progress shade element ID for imperative DOM updates. */
+export const progressBarThumbnailProgressId = "progress-bar-thumbnail-progress";
+
 export enum PlayerControlElement {
   AudioTrackButton = "AudioTrackButton",
   FullscreenButton = "FullscreenButton",

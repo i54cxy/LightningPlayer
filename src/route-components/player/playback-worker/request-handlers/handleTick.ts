@@ -1,9 +1,9 @@
 import { toError } from "../../../../shared/utils/toError";
 import {
-  DecodeWorkerEventType,
-  DecodeWorkerRequest,
-  DecodeWorkerRequestType,
-} from "../decodeWorker.types";
+  PlaybackWorkerEventType,
+  PlaybackWorkerRequest,
+  PlaybackWorkerRequestType,
+} from "../playbackWorker.types";
 import { drawAndRecordFrame } from "../utils/drawAndRecordFrame";
 import { workerState } from "../workerState";
 
@@ -30,7 +30,7 @@ const reportDrawnFrame = () => {
   if (elapsed <= 2000) {
     self.postMessage({
       fps: Math.round((drawnFrameCount * 1000) / elapsed),
-      type: DecodeWorkerEventType.DecodedFrameRate,
+      type: PlaybackWorkerEventType.DecodedFrameRate,
     });
   }
   drawnFrameCount = 0;
@@ -42,8 +42,8 @@ const reportDrawnFrame = () => {
 export const handleTick = async ({
   currentTime,
 }: Extract<
-  DecodeWorkerRequest,
-  { type: DecodeWorkerRequestType.Tick }
+  PlaybackWorkerRequest,
+  { type: PlaybackWorkerRequestType.Tick }
 >) => {
   const { playbackState } = workerState;
   if (!playbackState || !playbackState.isPlaying) return;
@@ -71,7 +71,7 @@ export const handleTick = async ({
     if (localAsyncId !== playbackState.asyncId) return;
     self.postMessage({
       error: toError(error),
-      type: DecodeWorkerEventType.DecodeError,
+      type: PlaybackWorkerEventType.DecodeError,
     });
   }
 };

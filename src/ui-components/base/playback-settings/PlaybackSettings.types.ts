@@ -1,6 +1,6 @@
 export enum PlaybackSettingsMenu {
   AudioVisualization = "AudioVisualization",
-  DevInfo = "DevInfo",
+  DevTools = "DevTools",
   Flip = "Flip",
   Main = "Main",
   Rotation = "Rotation",

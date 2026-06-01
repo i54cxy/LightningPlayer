@@ -1,7 +1,7 @@
 import { FC, useState } from "react";
 import ChevronRightIcon from "../../../assets/svgs/chevron-right.svg?react";
+import DeveloperToolsIcon from "../../../assets/svgs/developer-tools.svg?react";
 import FlipHorizontalIcon from "../../../assets/svgs/flip-horizontal.svg?react";
-import InfoIcon from "../../../assets/svgs/info.svg?react";
 import RotateClockwiseIcon from "../../../assets/svgs/rotate-clockwise.svg?react";
 import SoundWaveCircleSparkleIcon from "../../../assets/svgs/sound-wave-circle-sparkle.svg?react";
 import SpeedometerIcon from "../../../assets/svgs/speedometer.svg?react";
@@ -9,7 +9,7 @@ import { playbackSettingsContainerStyles } from "./PlaybackSettings.styles";
 import { PlaybackSettingsMenu } from "./PlaybackSettings.types";
 import { PlaybackSettingsAudioVisualizationMenu } from "./PlaybackSettingsAudioVisualizationMenu";
 import { PlaybackSettingsChip } from "./PlaybackSettingsChip";
-import { PlaybackSettingsDevInfoMenu } from "./PlaybackSettingsDevInfoMenu";
+import { PlaybackSettingsDevToolsMenu } from "./PlaybackSettingsDevToolsMenu";
 import { PlaybackSettingsFlipMenu } from "./PlaybackSettingsFlipMenu";
 import { PlaybackSettingsRotationMenu } from "./PlaybackSettingsRotationMenu";
 import { PlaybackSettingsSpeedMenu } from "./PlaybackSettingsSpeedMenu";
@@ -36,15 +36,15 @@ export const PlaybackSettings: FC<IPlaybackSettingsProps> = ({
   const handleAudioVisualizationOnBack = () =>
     setCurrentMenu(PlaybackSettingsMenu.Main);
 
-  const handleDevInfoOnBack = () => setCurrentMenu(PlaybackSettingsMenu.Main);
+  const handleDevToolsOnBack = () => setCurrentMenu(PlaybackSettingsMenu.Main);
 
   const handleFlipOnBack = () => setCurrentMenu(PlaybackSettingsMenu.Main);
 
   const handleOnAudioVisualizationClick = () =>
     setCurrentMenu(PlaybackSettingsMenu.AudioVisualization);
 
-  const handleOnDevInfoClick = () =>
-    setCurrentMenu(PlaybackSettingsMenu.DevInfo);
+  const handleOnDevToolsClick = () =>
+    setCurrentMenu(PlaybackSettingsMenu.DevTools);
 
   const handleOnFlipClick = () => setCurrentMenu(PlaybackSettingsMenu.Flip);
 
@@ -90,10 +90,10 @@ export const PlaybackSettings: FC<IPlaybackSettingsProps> = ({
             text="Speed"
           />
           <PlaybackSettingsChip
-            icon={<InfoIcon />}
-            onClick={handleOnDevInfoClick}
+            icon={<DeveloperToolsIcon />}
+            onClick={handleOnDevToolsClick}
             rightIcon={<ChevronRightIcon />}
-            text="Dev Info"
+            text="Dev Tools"
           />
         </>
       )}
@@ -102,8 +102,8 @@ export const PlaybackSettings: FC<IPlaybackSettingsProps> = ({
           onBack={handleAudioVisualizationOnBack}
         />
       )}
-      {currentMenu === PlaybackSettingsMenu.DevInfo && (
-        <PlaybackSettingsDevInfoMenu onBack={handleDevInfoOnBack} />
+      {currentMenu === PlaybackSettingsMenu.DevTools && (
+        <PlaybackSettingsDevToolsMenu onBack={handleDevToolsOnBack} />
       )}
       {currentMenu === PlaybackSettingsMenu.Flip && (
         <PlaybackSettingsFlipMenu onBack={handleFlipOnBack} />

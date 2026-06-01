@@ -1,20 +1,27 @@
 import { ALL_FORMATS, BlobSource, CanvasSink, Input } from "mediabunny";
 import { toError } from "../../../../shared/utils/toError";
 import {
-  DecodeWorkerEventType,
-  DecodeWorkerRequest,
-  DecodeWorkerRequestType,
-} from "../decodeWorker.types";
+  ThumbnailWorkerEventType,
+  ThumbnailWorkerRequest,
+  ThumbnailWorkerRequestType,
+} from "../thumbnailWorker.types";
 import { workerState } from "../workerState";
 
 declare const self: DedicatedWorkerGlobalScope;
 
+/**
+ * Opens the file and constructs the `thumbnailSink` used to decode preview
+ * thumbnails. Resolves once the sink is ready.
+ *
+ * @param params.blob - The media file.
+ * @param params.videoTrackIndex - Index of the video track to decode.
+ */
 export const handleLoadFile = async ({
   blob,
   videoTrackIndex,
 }: Extract<
-  DecodeWorkerRequest,
-  { type: DecodeWorkerRequestType.LoadFile }
+  ThumbnailWorkerRequest,
+  { type: ThumbnailWorkerRequestType.LoadFile }
 >) => {
   try {
     const input = new Input({
@@ -31,15 +38,11 @@ export const handleLoadFile = async ({
     workerState.thumbnailSink = new CanvasSink(videoTrack, {
       fit: "contain",
     });
-    workerState.videoSink = new CanvasSink(videoTrack, {
-      fit: "contain",
-      poolSize: 2,
-    });
-    self.postMessage({ type: DecodeWorkerEventType.LoadFileComplete });
+    self.postMessage({ type: ThumbnailWorkerEventType.LoadFileComplete });
   } catch (error) {
     self.postMessage({
       error: toError(error),
-      type: DecodeWorkerEventType.LoadFileError,
+      type: ThumbnailWorkerEventType.LoadFileError,
     });
   }
 };

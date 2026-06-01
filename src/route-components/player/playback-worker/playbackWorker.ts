@@ -1,12 +1,10 @@
 /// <reference lib="webworker" />
 
 import {
-  DecodeWorkerRequest,
-  DecodeWorkerRequestType,
-} from "./decodeWorker.types";
-import { handleGetThumbnail } from "./request-handlers/handleGetThumbnail";
+  PlaybackWorkerRequest,
+  PlaybackWorkerRequestType,
+} from "./playbackWorker.types";
 import { handleLoadFile } from "./request-handlers/handleLoadFile";
-import { handleProbe } from "./request-handlers/handleProbe";
 import { handleSeek } from "./request-handlers/handleSeek";
 import { handleSetPlaying } from "./request-handlers/handleSetPlaying";
 import { handleStartPlayback } from "./request-handlers/handleStartPlayback";
@@ -15,31 +13,25 @@ import { handleUpdateDrawParams } from "./request-handlers/handleUpdateDrawParam
 
 declare const self: DedicatedWorkerGlobalScope;
 
-self.onmessage = (event: MessageEvent<DecodeWorkerRequest>) => {
+self.onmessage = (event: MessageEvent<PlaybackWorkerRequest>) => {
   const request = event.data;
   switch (request.type) {
-    case DecodeWorkerRequestType.GetThumbnail:
-      void handleGetThumbnail(request);
-      break;
-    case DecodeWorkerRequestType.LoadFile:
+    case PlaybackWorkerRequestType.LoadFile:
       void handleLoadFile(request);
       break;
-    case DecodeWorkerRequestType.Probe:
-      void handleProbe(request);
-      break;
-    case DecodeWorkerRequestType.StartPlayback:
+    case PlaybackWorkerRequestType.StartPlayback:
       handleStartPlayback(request);
       break;
-    case DecodeWorkerRequestType.Seek:
+    case PlaybackWorkerRequestType.Seek:
       void handleSeek(request);
       break;
-    case DecodeWorkerRequestType.SetPlaying:
+    case PlaybackWorkerRequestType.SetPlaying:
       handleSetPlaying(request);
       break;
-    case DecodeWorkerRequestType.Tick:
+    case PlaybackWorkerRequestType.Tick:
       void handleTick(request);
       break;
-    case DecodeWorkerRequestType.UpdateDrawParams:
+    case PlaybackWorkerRequestType.UpdateDrawParams:
       handleUpdateDrawParams(request);
       break;
   }

@@ -1,9 +1,9 @@
 import { toError } from "../../../../shared/utils/toError";
 import {
-  DecodeWorkerEventType,
-  DecodeWorkerRequest,
-  DecodeWorkerRequestType,
-} from "../decodeWorker.types";
+  PlaybackWorkerEventType,
+  PlaybackWorkerRequest,
+  PlaybackWorkerRequestType,
+} from "../playbackWorker.types";
 import { drawAndRecordFrame } from "../utils/drawAndRecordFrame";
 import { workerState } from "../workerState";
 
@@ -12,8 +12,8 @@ declare const self: DedicatedWorkerGlobalScope;
 export const handleSeek = async ({
   time,
 }: Extract<
-  DecodeWorkerRequest,
-  { type: DecodeWorkerRequestType.Seek }
+  PlaybackWorkerRequest,
+  { type: PlaybackWorkerRequestType.Seek }
 >) => {
   const { playbackState, videoSink } = workerState;
   if (!videoSink || !playbackState) return;
@@ -62,7 +62,7 @@ export const handleSeek = async ({
     if (localAsyncId !== playbackState.asyncId) return;
     self.postMessage({
       error: toError(error),
-      type: DecodeWorkerEventType.DecodeError,
+      type: PlaybackWorkerEventType.DecodeError,
     });
   }
 };

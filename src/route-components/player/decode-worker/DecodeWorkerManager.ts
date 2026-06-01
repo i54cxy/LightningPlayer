@@ -1,144 +1,55 @@
 import {
-  DecodeWorkerEvent,
-  DecodeWorkerEventType,
-  DecodeWorkerRequestType,
-  IPlaybackDrawParams,
-} from "./decodeWorker.types";
+  previewThumbnailHeight,
+  previewThumbnailWidth,
+} from "../../../ui-components/base/preview-thumbnail/PreviewThumbnail.types";
 import {
-  ILoadFileParams,
-  IProbeFrameResult,
-} from "./DecodeWorkerManager.types";
+  IPlaybackDrawParams,
+  PlaybackWorkerEvent,
+  PlaybackWorkerEventType,
+  PlaybackWorkerRequestType,
+} from "../playback-worker/playbackWorker.types";
+import { PreviewThumbnailCache } from "../preview-thumbnail/PreviewThumbnailCache";
+import {
+  ThumbnailWorkerEvent,
+  ThumbnailWorkerEventType,
+  ThumbnailWorkerRequestType,
+} from "../thumbnail-worker/thumbnailWorker.types";
+import { ILoadFileParams } from "./DecodeWorkerManager.types";
 
 /**
- * Main-thread wrapper around the decode worker. Owns the worker lifecycle.
+ * Main-thread wrapper that owns two decode workers:
  *
- * Construct once per Player mount; `dispose()` on unmount. The manager owns the
- * worker lifecycle and recycles it via `terminateWorker()`: call that when
- * switching files to instantly stop the old file's in-flight decode and spin up
- * a fresh worker. Because the offscreen canvas transferred in `startPlayback`
- * cannot be re-transferred, the new worker is paired with a fresh `<canvas>`
- * element each time. A probe timeout uses the same `terminateWorker()` path to
- * recover a hung worker, then re-loads the same file.
+ * - A **playback worker** handles the streaming playback session.
+ * - A **thumbnail worker** decodes all preview thumbnails.
+ *
+ * Decoupling them keeps thumbnail decoding off the playback thread, so it can
+ * never starve frame rendering. Construct once per Player mount; `dispose()` on
+ * unmount. The workers are recycled independently: `recyclePlaybackWorker()` on
+ * file switch (paired with a fresh `<canvas>`, since the offscreen canvas
+ * transferred in `startPlayback` cannot be re-transferred) and
+ * `recycleThumbnailWorker()` on file switch and when disabling preview
+ * thumbnails.
  */
 export class DecodeWorkerManager {
-  // Latest on-screen frame rate reported by the worker during playback (frames
-  // drawn per second). Read by the render loop for the FPS readout; 0 when
-  // paused or between files.
+  // Latest on-screen frame rate reported by the playback worker (frames drawn
+  // per second). Read by the render loop for the FPS readout; 0 when paused or
+  // between files.
   decodedFps = 0;
-  // Set by dispose(); guards the probe-timeout respawn so a probe that times
-  // out after disposal cannot resurrect a worker from a dead manager.
+  // Set by dispose(); guards the probe-timeout recycle so a probe that times out
+  // after disposal cannot resurrect a worker from a dead manager.
   private disposed = false;
   private hasTransferredCanvas = false;
-  private lastLoadFileParams: ILoadFileParams | undefined;
-  private nextThumbnailRequestId = 0;
-  private pendingThumbnails = new Map<
-    number,
-    { reject: (reason: Error) => void; resolve: (blob: Blob) => void }
-  >();
-  private worker: Worker;
+  private playbackWorker: Worker;
+  private thumbnailWorker: Worker;
 
   constructor() {
-    this.worker = this.spawnWorker();
+    this.playbackWorker = this.spawnPlaybackWorker();
+    this.thumbnailWorker = this.spawnThumbnailWorker();
   }
 
   /**
-   * Decodes a single frame at the given timestamp in the worker, resizes it
-   * to thumbnail dimensions, and returns a JPEG blob. Concurrent requests are
-   * correlated by `requestId`.
-   *
-   * @param timestamp - The timestamp in seconds.
-   * @returns A JPEG blob of the thumbnail.
-   */
-  getThumbnail(timestamp: number): Promise<Blob> {
-    const requestId = this.nextThumbnailRequestId++;
-    return new Promise<Blob>((resolve, reject) => {
-      this.pendingThumbnails.set(requestId, { reject, resolve });
-      this.worker.postMessage({
-        requestId,
-        timestamp,
-        type: DecodeWorkerRequestType.GetThumbnail,
-      });
-    });
-  }
-
-  /**
-   * Opens the file in the worker and constructs the `videoSink` and
-   * `thumbnailSink`. Resolves once both sinks are ready. Throws if the
-   * worker reports an error.
-   */
-  async loadFile(params: ILoadFileParams): Promise<void> {
-    this.lastLoadFileParams = params;
-    await new Promise<void>((resolve, reject) => {
-      const handler = (event: MessageEvent<DecodeWorkerEvent>) => {
-        const message = event.data;
-        if (message.type === DecodeWorkerEventType.LoadFileComplete) {
-          this.worker.removeEventListener("message", handler);
-          resolve();
-        } else if (message.type === DecodeWorkerEventType.LoadFileError) {
-          this.worker.removeEventListener("message", handler);
-          reject(message.error);
-        }
-      };
-      this.worker.addEventListener("message", handler);
-      this.worker.postMessage({
-        blob: params.blob,
-        type: DecodeWorkerRequestType.LoadFile,
-        videoTrackIndex: params.videoTrackIndex,
-      });
-    });
-  }
-
-  /**
-   * Decodes one frame at the given timestamp. If the decode exceeds
-   * `timeoutMs`, the hung worker is recycled via `terminateWorker()`, the file
-   * is re-loaded into the fresh worker, and `aborted: true` is returned.
-   */
-  async probe({
-    timeoutMs,
-    timestamp,
-  }: {
-    timeoutMs: number;
-    timestamp: number;
-  }): Promise<IProbeFrameResult> {
-    const result = await new Promise<IProbeFrameResult>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.worker.removeEventListener("message", handler);
-        resolve({ aborted: true });
-      }, timeoutMs);
-      const handler = (event: MessageEvent<DecodeWorkerEvent>) => {
-        const message = event.data;
-        if (message.type === DecodeWorkerEventType.ProbeResult) {
-          clearTimeout(timer);
-          this.worker.removeEventListener("message", handler);
-          resolve({ aborted: false, durationMs: message.durationMs });
-        } else if (message.type === DecodeWorkerEventType.ProbeError) {
-          clearTimeout(timer);
-          this.worker.removeEventListener("message", handler);
-          reject(message.error);
-        }
-      };
-      this.worker.addEventListener("message", handler);
-      this.worker.postMessage({
-        timestamp,
-        type: DecodeWorkerRequestType.Probe,
-      });
-    });
-
-    // On timeout, kill the stuck worker and spin up a fresh one re-loaded to
-    // the same file. This is safe as long as the canvas has not been
-    // transferred yet (i.e. startPlayback hasn't been called). If it has,
-    // the new worker will lack the OffscreenCanvas and video rendering will
-    // no-op until the Player is remounted.
-    if (result.aborted && this.lastLoadFileParams && !this.disposed) {
-      this.terminateWorker();
-      await this.loadFile(this.lastLoadFileParams);
-    }
-    return result;
-  }
-
-  /**
-   * First call only: transfers control of the canvas to the worker, sets
-   * initial draw params. Subsequent calls are a no-op (the offscreen canvas
+   * First call only: transfers control of the canvas to the playback worker and
+   * sets initial draw params. Subsequent calls are a no-op (the offscreen canvas
    * cannot be re-transferred). Throws if the worker reports an error.
    */
   async startPlayback({
@@ -152,22 +63,24 @@ export class DecodeWorkerManager {
     const offscreenCanvas = canvasElement.transferControlToOffscreen();
     this.hasTransferredCanvas = true;
     await new Promise<void>((resolve, reject) => {
-      const handler = (event: MessageEvent<DecodeWorkerEvent>) => {
+      const handler = (event: MessageEvent<PlaybackWorkerEvent>) => {
         const message = event.data;
-        if (message.type === DecodeWorkerEventType.StartPlaybackComplete) {
-          this.worker.removeEventListener("message", handler);
+        if (message.type === PlaybackWorkerEventType.StartPlaybackComplete) {
+          this.playbackWorker.removeEventListener("message", handler);
           resolve();
-        } else if (message.type === DecodeWorkerEventType.StartPlaybackError) {
-          this.worker.removeEventListener("message", handler);
+        } else if (
+          message.type === PlaybackWorkerEventType.StartPlaybackError
+        ) {
+          this.playbackWorker.removeEventListener("message", handler);
           reject(message.error);
         }
       };
-      this.worker.addEventListener("message", handler);
-      this.worker.postMessage(
+      this.playbackWorker.addEventListener("message", handler);
+      this.playbackWorker.postMessage(
         {
           drawParams,
           offscreenCanvas,
-          type: DecodeWorkerRequestType.StartPlayback,
+          type: PlaybackWorkerRequestType.StartPlayback,
         },
         [offscreenCanvas],
       );
@@ -175,7 +88,10 @@ export class DecodeWorkerManager {
   }
 
   seek(time: number): void {
-    this.worker.postMessage({ time, type: DecodeWorkerRequestType.Seek });
+    this.playbackWorker.postMessage({
+      time,
+      type: PlaybackWorkerRequestType.Seek,
+    });
   }
 
   setPlaying(isPlaying: boolean): void {
@@ -184,78 +100,196 @@ export class DecodeWorkerManager {
     if (!isPlaying) {
       this.decodedFps = 0;
     }
-    this.worker.postMessage({
+    this.playbackWorker.postMessage({
       isPlaying,
-      type: DecodeWorkerRequestType.SetPlaying,
+      type: PlaybackWorkerRequestType.SetPlaying,
     });
   }
 
   tick(currentTime: number): void {
-    this.worker.postMessage({
+    this.playbackWorker.postMessage({
       currentTime,
-      type: DecodeWorkerRequestType.Tick,
+      type: PlaybackWorkerRequestType.Tick,
     });
   }
 
   updateDrawParams(partial: Partial<IPlaybackDrawParams>): void {
-    this.worker.postMessage({
+    this.playbackWorker.postMessage({
       partial,
-      type: DecodeWorkerRequestType.UpdateDrawParams,
+      type: PlaybackWorkerRequestType.UpdateDrawParams,
     });
   }
 
   /**
-   * Recycles the worker: terminates the current one — instantly stopping any
-   * in-flight decode on its thread — and spawns a fresh, idle replacement with
-   * no file loaded and no canvas transferred. The single place workers are
-   * replaced; call it when switching files and to recover a hung worker.
+   * Decodes one thumbnail per second of the file on the thumbnail worker (in one
+   * sequential pass) and stores each in `cache`. Logs the estimated memory cost
+   * up front and reports progress as it fills.
+   *
+   * @param params.cache - The cache to populate.
+   * @param params.duration - Total file duration in seconds.
+   * @param params.onProgress - Called as thumbnails arrive with the fraction (0-1) filled.
    */
-  terminateWorker(): void {
+  async fillThumbnails({
+    cache,
+    duration,
+    onProgress,
+  }: {
+    cache: PreviewThumbnailCache;
+    duration: number;
+    onProgress?: (fraction: number) => void;
+  }): Promise<void> {
+    // One thumbnail per second (see handleFillThumbnails).
+    const expected = Math.floor(duration) + 1;
+    const estimatedMb =
+      (expected * previewThumbnailWidth * previewThumbnailHeight * 4) /
+      1024 /
+      1024;
+    console.log(
+      `DecodeWorkerManager: filling ${expected} thumbnails (estimated up to ${estimatedMb.toFixed(1)} MB)`,
+    );
+
+    await new Promise<void>((resolve, reject) => {
+      let received = 0;
+      const handler = (event: MessageEvent<ThumbnailWorkerEvent>) => {
+        const message = event.data;
+        if (message.type === ThumbnailWorkerEventType.ThumbnailReady) {
+          cache.set(message.timestamp, message.imageBitmap);
+          received += 1;
+          onProgress?.(received / expected);
+          if (received % 100 === 0) {
+            console.log(
+              `DecodeWorkerManager: thumbnails ${received}/${expected} (${(cache.memoryBytes / 1024 / 1024).toFixed(1)} MB)`,
+            );
+          }
+        } else if (
+          message.type === ThumbnailWorkerEventType.FillThumbnailsComplete
+        ) {
+          this.thumbnailWorker.removeEventListener("message", handler);
+          console.log(
+            `DecodeWorkerManager: thumbnail fill complete — ${cache.size} thumbnails, ${(cache.memoryBytes / 1024 / 1024).toFixed(1)} MB`,
+          );
+          resolve();
+        } else if (
+          message.type === ThumbnailWorkerEventType.FillThumbnailsError
+        ) {
+          this.thumbnailWorker.removeEventListener("message", handler);
+          reject(message.error);
+        }
+      };
+      this.thumbnailWorker.addEventListener("message", handler);
+      this.thumbnailWorker.postMessage({
+        duration,
+        type: ThumbnailWorkerRequestType.FillThumbnails,
+      });
+    });
+  }
+
+  /** Terminates both workers. The manager is unusable after this. */
+  dispose(): void {
+    this.disposed = true;
+    this.playbackWorker.terminate();
+    this.thumbnailWorker.terminate();
+  }
+
+  /**
+   * Terminates + respawns the playback worker — instantly stopping any in-flight
+   * decode on its thread — and spawns a fresh idle replacement. Called when
+   * switching files.
+   */
+  recyclePlaybackWorker(): void {
     if (this.disposed) return;
     this.decodedFps = 0;
-    this.rejectAllPendingThumbnails("Worker terminated.");
-    this.worker.terminate();
-    this.worker = this.spawnWorker();
+    this.playbackWorker.terminate();
+    this.playbackWorker = this.spawnPlaybackWorker();
     this.hasTransferredCanvas = false;
   }
 
-  /** Terminates the worker. The manager is unusable after this. */
-  dispose(): void {
-    this.disposed = true;
-    this.rejectAllPendingThumbnails("Worker disposed.");
-    this.worker.terminate();
+  /**
+   * Terminates + respawns the thumbnail worker — instantly stopping any
+   * in-flight probe/fill on its thread. Called when switching files, when
+   * disabling preview thumbnails, and on probe timeout.
+   */
+  recycleThumbnailWorker(): void {
+    if (this.disposed) return;
+    this.thumbnailWorker.terminate();
+    this.thumbnailWorker = this.spawnThumbnailWorker();
   }
 
-  private rejectAllPendingThumbnails(reason: string): void {
-    for (const [id, { reject }] of this.pendingThumbnails) {
-      reject(new Error(reason));
-      this.pendingThumbnails.delete(id);
-    }
+  /** Loads the file into the playback worker (videoSink). */
+  loadFileForPlayback(params: ILoadFileParams): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      const handler = (event: MessageEvent<PlaybackWorkerEvent>) => {
+        const message = event.data;
+        if (message.type === PlaybackWorkerEventType.LoadFileComplete) {
+          this.playbackWorker.removeEventListener("message", handler);
+          resolve();
+        } else if (message.type === PlaybackWorkerEventType.LoadFileError) {
+          this.playbackWorker.removeEventListener("message", handler);
+          reject(message.error);
+        }
+      };
+      this.playbackWorker.addEventListener("message", handler);
+      this.playbackWorker.postMessage({
+        blob: params.blob,
+        type: PlaybackWorkerRequestType.LoadFile,
+        videoTrackIndex: params.videoTrackIndex,
+      });
+    });
   }
 
-  private spawnWorker(): Worker {
+  /** Loads the file into the thumbnail worker (thumbnailSink). */
+  loadFileForPreviewThumbnails(params: ILoadFileParams): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      const handler = (event: MessageEvent<ThumbnailWorkerEvent>) => {
+        const message = event.data;
+        if (message.type === ThumbnailWorkerEventType.LoadFileComplete) {
+          this.thumbnailWorker.removeEventListener("message", handler);
+          resolve();
+        } else if (message.type === ThumbnailWorkerEventType.LoadFileError) {
+          this.thumbnailWorker.removeEventListener("message", handler);
+          reject(message.error);
+        }
+      };
+      this.thumbnailWorker.addEventListener("message", handler);
+      this.thumbnailWorker.postMessage({
+        blob: params.blob,
+        type: ThumbnailWorkerRequestType.LoadFile,
+        videoTrackIndex: params.videoTrackIndex,
+      });
+    });
+  }
+
+  private spawnPlaybackWorker(): Worker {
     const worker = new Worker(
-      new URL("./decodeWorker.ts", import.meta.url),
+      new URL("../playback-worker/playbackWorker.ts", import.meta.url),
       { type: "module" },
     );
-    worker.onmessage = (event: MessageEvent<DecodeWorkerEvent>) => {
+    worker.onmessage = (event: MessageEvent<PlaybackWorkerEvent>) => {
       const message = event.data;
-      if (message.type === DecodeWorkerEventType.DecodedFrameRate) {
+      if (message.type === PlaybackWorkerEventType.DecodedFrameRate) {
         this.decodedFps = message.fps;
-      } else if (message.type === DecodeWorkerEventType.DecodeError) {
-        console.error("DecodeWorkerManager: worker decode error:", message.error);
-      } else if (message.type === DecodeWorkerEventType.GetThumbnailResult) {
-        const pending = this.pendingThumbnails.get(message.requestId);
-        if (pending) {
-          this.pendingThumbnails.delete(message.requestId);
-          pending.resolve(message.blob);
-        }
-      } else if (message.type === DecodeWorkerEventType.GetThumbnailError) {
-        const pending = this.pendingThumbnails.get(message.requestId);
-        if (pending) {
-          this.pendingThumbnails.delete(message.requestId);
-          pending.reject(message.error);
-        }
+      } else if (message.type === PlaybackWorkerEventType.DecodeError) {
+        console.error(
+          "DecodeWorkerManager: playback decode error:",
+          message.error,
+        );
+      }
+    };
+    return worker;
+  }
+
+  private spawnThumbnailWorker(): Worker {
+    const worker = new Worker(
+      new URL("../thumbnail-worker/thumbnailWorker.ts", import.meta.url),
+      { type: "module" },
+    );
+    worker.onmessage = (event: MessageEvent<ThumbnailWorkerEvent>) => {
+      const message = event.data;
+      if (message.type === ThumbnailWorkerEventType.FillThumbnailsError) {
+        console.error(
+          "DecodeWorkerManager: thumbnail decode error:",
+          message.error,
+        );
       }
     };
     return worker;

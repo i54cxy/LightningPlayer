@@ -30,6 +30,7 @@ declare module "@emotion/react" {
           background: string;
           hoverFill: string;
           thumb: string;
+          thumbnailProgress: string;
         };
         timestamp: {
           background: string;
