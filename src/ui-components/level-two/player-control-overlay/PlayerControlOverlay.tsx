@@ -114,9 +114,10 @@ export interface IPlayerControlOverlayProps {
    */
   progressRef: RefObject<number>;
   /**
-   * Time in seconds.
+   * Time in seconds. Resolves once the seeked frame is on screen, so a resuming
+   * caller can await it before restarting the clock.
    */
-  seek(time: number): void;
+  seek(time: number): Promise<void>;
   /** The index of the currently selected audio track. */
   selectedAudioTrackIndex: number;
   volume: number;
@@ -362,7 +363,7 @@ export const PlayerControlOverlay: FC<IPlayerControlOverlayProps> = ({
       isDraggingProgressBarRef.current = true;
     };
 
-    const handleMouseUp = (e: MouseEvent) => {
+    const handleMouseUp = async (e: MouseEvent) => {
       const newProgress = getProgressFromEvent({
         duration,
         event: e,
@@ -370,15 +371,17 @@ export const PlayerControlOverlay: FC<IPlayerControlOverlayProps> = ({
       });
       console.log("Seeking ended.");
 
-      seek(newProgress);
       isDraggingProgressBarRef.current = false;
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
 
+      // Wait for the seeked frame to be on screen before resuming, so the clock
+      // doesn't run ahead of the picture (which makes playback sprint to catch
+      // up on slow-decoding files).
+      await seek(newProgress);
       if (isPlaying) {
         play();
       }
-
-      document.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("mouseup", handleMouseUp);
     };
 
     document.addEventListener("mousemove", handleMouseMove);

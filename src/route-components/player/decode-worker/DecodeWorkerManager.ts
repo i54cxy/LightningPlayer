@@ -39,7 +39,12 @@ export class DecodeWorkerManager {
   // after disposal cannot resurrect a worker from a dead manager.
   private disposed = false;
   private hasTransferredCanvas = false;
+  // Resolvers for in-flight seek() promises, keyed by the seek id echoed back in
+  // the worker's SeekComplete acknowledgment. Lets resume wait until the seeked
+  // frame is actually on screen (see seek()).
+  private pendingSeeks = new Map<number, () => void>();
   private playbackWorker: Worker;
+  private seekCounter = 0;
   private thumbnailWorker: Worker;
 
   constructor() {
@@ -87,10 +92,27 @@ export class DecodeWorkerManager {
     });
   }
 
-  seek(time: number): void {
-    this.playbackWorker.postMessage({
-      time,
-      type: PlaybackWorkerRequestType.Seek,
+  /**
+   * Seeks the playback worker and resolves once it has decoded and drawn the
+   * frame at `time`. The caller should await this before resuming the clock so
+   * the clock can't run ahead of the picture during a slow decode (which would
+   * make playback sprint to catch up).
+   *
+   * @param time - The target timestamp in seconds.
+   * @returns A promise that resolves when the seeked frame is on screen.
+   */
+  seek(time: number): Promise<void> {
+    const seekId = ++this.seekCounter;
+    return new Promise<void>((resolve) => {
+      // The worker acknowledges every seek exactly once (even superseded ones),
+      // so each id is resolved when its SeekComplete arrives — no need to
+      // pre-resolve superseded ids here.
+      this.pendingSeeks.set(seekId, resolve);
+      this.playbackWorker.postMessage({
+        seekId,
+        time,
+        type: PlaybackWorkerRequestType.Seek,
+      });
     });
   }
 
@@ -187,8 +209,21 @@ export class DecodeWorkerManager {
   /** Terminates both workers. The manager is unusable after this. */
   dispose(): void {
     this.disposed = true;
+    this.drainPendingSeeks();
     this.playbackWorker.terminate();
     this.thumbnailWorker.terminate();
+  }
+
+  /**
+   * Resolves and clears all in-flight seek promises. Called when the playback
+   * worker is terminated, since the replacement worker never acknowledges the
+   * old seeks.
+   */
+  private drainPendingSeeks(): void {
+    for (const resolve of this.pendingSeeks.values()) {
+      resolve();
+    }
+    this.pendingSeeks.clear();
   }
 
   /**
@@ -199,6 +234,7 @@ export class DecodeWorkerManager {
   recyclePlaybackWorker(): void {
     if (this.disposed) return;
     this.decodedFps = 0;
+    this.drainPendingSeeks();
     this.playbackWorker.terminate();
     this.playbackWorker = this.spawnPlaybackWorker();
     this.hasTransferredCanvas = false;
@@ -268,6 +304,12 @@ export class DecodeWorkerManager {
       const message = event.data;
       if (message.type === PlaybackWorkerEventType.DecodedFrameRate) {
         this.decodedFps = message.fps;
+      } else if (message.type === PlaybackWorkerEventType.SeekComplete) {
+        const resolve = this.pendingSeeks.get(message.seekId);
+        if (resolve) {
+          resolve();
+          this.pendingSeeks.delete(message.seekId);
+        }
       } else if (message.type === PlaybackWorkerEventType.DecodeError) {
         console.error(
           "DecodeWorkerManager: playback decode error:",
