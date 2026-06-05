@@ -40,9 +40,9 @@ export class DecodeWorkerManager {
   private disposed = false;
   private hasTransferredCanvas = false;
   // Resolvers for in-flight seek() promises, keyed by the seek id echoed back in
-  // the worker's SeekComplete acknowledgment. Lets resume wait until the seeked
-  // frame is actually on screen (see seek()).
-  private pendingSeeks = new Map<number, () => void>();
+  // the worker's SeekComplete acknowledgment. Each resolves with whether the
+  // seek was still the latest when it completed (see seek()).
+  private pendingSeeks = new Map<number, (isLatest: boolean) => void>();
   private playbackWorker: Worker;
   private seekCounter = 0;
   private thumbnailWorker: Worker;
@@ -99,11 +99,14 @@ export class DecodeWorkerManager {
    * make playback sprint to catch up).
    *
    * @param time - The target timestamp in seconds.
-   * @returns A promise that resolves when the seeked frame is on screen.
+   * @returns A promise that resolves once the worker finishes this seek (drawing
+   * its frame, or bailing if superseded), to `true` if it is still the latest
+   * seek (its frame is on screen — safe to resume) or `false` if a newer seek
+   * has since been issued (that newer seek owns the resume).
    */
-  seek(time: number): Promise<void> {
+  seek(time: number): Promise<boolean> {
     const seekId = ++this.seekCounter;
-    return new Promise<void>((resolve) => {
+    return new Promise<boolean>((resolve) => {
       // The worker acknowledges every seek exactly once (even superseded ones),
       // so each id is resolved when its SeekComplete arrives — no need to
       // pre-resolve superseded ids here.
@@ -217,11 +220,12 @@ export class DecodeWorkerManager {
   /**
    * Resolves and clears all in-flight seek promises. Called when the playback
    * worker is terminated, since the replacement worker never acknowledges the
-   * old seeks.
+   * old seeks. Resolves to `false` (not latest) so callers don't resume against
+   * a torn-down worker.
    */
   private drainPendingSeeks(): void {
     for (const resolve of this.pendingSeeks.values()) {
-      resolve();
+      resolve(false);
     }
     this.pendingSeeks.clear();
   }
@@ -307,7 +311,8 @@ export class DecodeWorkerManager {
       } else if (message.type === PlaybackWorkerEventType.SeekComplete) {
         const resolve = this.pendingSeeks.get(message.seekId);
         if (resolve) {
-          resolve();
+          // Latest only if no newer seek has been issued since this one.
+          resolve(message.seekId === this.seekCounter);
           this.pendingSeeks.delete(message.seekId);
         }
       } else if (message.type === PlaybackWorkerEventType.DecodeError) {

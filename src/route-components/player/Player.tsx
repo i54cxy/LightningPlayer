@@ -244,19 +244,19 @@ export const Player: FC = () => {
   };
 
   const seekImpl = useCallback(
-    async (time: number): Promise<void> => {
+    async (time: number): Promise<boolean> => {
       if (!playbackClockRef.current) {
         console.error("seek: playbackClock not initialized.");
-        return;
+        return false;
       }
       if (!decodeManagerRef.current) {
         console.error("seek: decodeManager not initialized.");
-        return;
+        return false;
       }
 
       if (duration === undefined) {
         console.error("seek: duration not set.");
-        return;
+        return false;
       }
 
       // Always update clock and progress bar.
@@ -265,10 +265,13 @@ export const Player: FC = () => {
       playbackClockRef.current.seek(time);
       // Tell the worker to seek and draw at the new position, awaiting until the
       // seeked frame is on screen so a resuming caller doesn't start the clock
-      // ahead of the picture. The worker no-ops for audio-only files (no video).
+      // ahead of the picture. Resolves to whether this is still the latest seek
+      // (only the latest may resume). Audio-only files have no video seek to
+      // supersede, so resuming is always safe.
       if (hasVideo) {
-        await decodeManagerRef.current.seek(time);
+        return await decodeManagerRef.current.seek(time);
       }
+      return true;
     },
     [duration, hasVideo],
   );
