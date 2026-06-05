@@ -18,6 +18,13 @@ declare const self: DedicatedWorkerGlobalScope;
 // player pauses, so `isPlaying` is false, before any seek.)
 let seekChain: Promise<void> = Promise.resolve();
 
+/**
+ * Queues a seek onto the serialized seek chain. Bumps `asyncId` synchronously so
+ * a later seek supersedes any still queued, then appends the actual work.
+ *
+ * @param request.seekId - Main-thread correlation id, echoed back in SeekComplete.
+ * @param request.time - Target timestamp in seconds.
+ */
 export const handleSeek = ({
   seekId: requestSeekId,
   time,
@@ -41,6 +48,16 @@ export const handleSeek = ({
     });
 };
 
+/**
+ * Performs one seek: tears down the previous iterator, opens a fresh one at
+ * `time`, draws the first frame and buffers the second for handleTick. Bails
+ * without drawing if superseded (`asyncId` no longer the latest). Always
+ * acknowledges exactly once via SeekComplete (see the finally).
+ *
+ * @param params.asyncId - This seek's id, compared against the latest to detect supersession.
+ * @param params.requestSeekId - Main-thread correlation id for the acknowledgment.
+ * @param params.time - Target timestamp in seconds.
+ */
 const runSeek = async ({
   asyncId,
   requestSeekId,
