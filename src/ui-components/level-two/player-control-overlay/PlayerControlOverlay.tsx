@@ -114,9 +114,11 @@ export interface IPlayerControlOverlayProps {
    */
   progressRef: RefObject<number>;
   /**
-   * Time in seconds.
+   * Time in seconds. Resolves once the seeked frame is on screen, to whether
+   * this is still the latest seek — a resuming caller awaits it and resumes only
+   * when `true` (a newer seek owns the resume otherwise).
    */
-  seek(time: number): void;
+  seek(time: number): Promise<boolean>;
   /** The index of the currently selected audio track. */
   selectedAudioTrackIndex: number;
   volume: number;
@@ -170,6 +172,11 @@ export const PlayerControlOverlay: FC<IPlayerControlOverlayProps> = ({
   );
   const progressBarContainerRef = useRef<HTMLDivElement>(null);
   const shouldBlockIdleHideRef = useRef(false);
+  // Whether playback was active when the current progress-bar interaction began,
+  // so the resume survives across rapid re-grabs. Persists until the latest seek
+  // resumes (the per-render `isPlaying` prop flips to false on the first pause,
+  // so it can't be trusted across a second gesture).
+  const wasPlayingBeforeSeekRef = useRef(false);
   const progressBarContainerDimensions = useDimensions(progressBarContainerRef);
 
   // Sync shouldBlockIdleHideRef with current state so the idle timer callback
@@ -343,6 +350,9 @@ export const PlayerControlOverlay: FC<IPlayerControlOverlayProps> = ({
     );
 
     if (isPlaying) {
+      // Remember the intent to resume; left untouched when already paused so a
+      // prior superseded gesture's intent carries over to this one.
+      wasPlayingBeforeSeekRef.current = true;
       pause();
     }
 
@@ -362,7 +372,7 @@ export const PlayerControlOverlay: FC<IPlayerControlOverlayProps> = ({
       isDraggingProgressBarRef.current = true;
     };
 
-    const handleMouseUp = (e: MouseEvent) => {
+    const handleMouseUp = async (e: MouseEvent) => {
       const newProgress = getProgressFromEvent({
         duration,
         event: e,
@@ -370,15 +380,22 @@ export const PlayerControlOverlay: FC<IPlayerControlOverlayProps> = ({
       });
       console.log("Seeking ended.");
 
-      seek(newProgress);
       isDraggingProgressBarRef.current = false;
-
-      if (isPlaying) {
-        play();
-      }
-
       document.removeEventListener("mousemove", handleMouseMove);
       document.removeEventListener("mouseup", handleMouseUp);
+
+      // Wait for the seeked frame to be on screen before resuming, so the clock
+      // doesn't run ahead of the picture (which makes playback sprint to catch
+      // up on slow-decoding files). Resume only if this is still the latest seek
+      // — a faster follow-up seek (rapid re-grab) owns the resume instead, and
+      // carries the resume intent until it lands.
+      const isLatestSeek = await seek(newProgress);
+      if (isLatestSeek) {
+        if (wasPlayingBeforeSeekRef.current) {
+          play();
+        }
+        wasPlayingBeforeSeekRef.current = false;
+      }
     };
 
     document.addEventListener("mousemove", handleMouseMove);

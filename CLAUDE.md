@@ -150,7 +150,7 @@ Each worker is a distinct module with its own request/event types and its own `I
 - `loadFileForPlayback(params)` / `loadFileForPreviewThumbnails(params)` — open the file in the playback (`videoSink`, `poolSize: 2`) / thumbnail (`thumbnailSink`) worker respectively.
 - `fillThumbnails(cache, duration, onProgress)` — decodes one thumbnail per second on the thumbnail worker in a single `canvasesAtTimestamps` pass, streaming each into `cache` and reporting progress (see Preview thumbnail). Logs the estimated memory cost up front.
 - `startPlayback(canvasElement, drawParams)` — transfers the `<canvas>` to the playback worker via `transferControlToOffscreen()`; a no-op if that worker already received a canvas. Because the playback worker is recycled per file, each file's fresh worker gets a fresh, never-transferred `<canvas>` element (remounted in `Player.tsx` via a per-file key).
-- `seek` / `tick` / `setPlaying` / `updateDrawParams` — drive the playback worker.
+- `seek` / `tick` / `setPlaying` / `updateDrawParams` — drive the playback worker. `seek(time)` returns a `Promise<void>` that resolves once the worker has drawn the seeked frame (see Seeking); the worker echoes a per-request `seekId` back in a `SeekComplete` event so the manager resolves the right awaiter. `pendingSeeks` (id → resolver) is drained on recycle/dispose so a terminated worker can't leave a seek hanging.
 - `recyclePlaybackWorker()` / `recycleThumbnailWorker()` — terminate + respawn one worker. Playback: on file switch. Thumbnail: on file switch and when disabling preview thumbnails.
 - `dispose()` — terminates both workers permanently; called on Player unmount.
 
@@ -161,6 +161,8 @@ Each worker is a distinct module with its own request/event types and its own `I
 #### Video playback
 
 The main-thread render loop calls `decodeManagerRef.current.tick(playbackTime)` on every `requestAnimationFrame`. The worker draws the buffered next frame if its timestamp has been reached and asynchronously pre-fetches the following frame. On seek, the worker creates a fresh iterator, draws the first frame immediately, and buffers the second.
+
+Seeks are **serialized** in the worker (`handleSeek.ts`) through a module-level `seekChain` promise so the single `CanvasSink` decoder is never driven by two iterators at once (tearing down the old iterator and opening a new one both touch the decoder). A synchronously-bumped `playbackState.asyncId` lets a queued-but-superseded seek bail before touching the decoder, so only the latest seek decodes and draws. Each `runSeek` posts exactly one `SeekComplete` (in a `finally`, regardless of outcome); a superseded seek's acknowledgment is a harmless no-op on the main thread since its `seekId` is no longer pending.
 
 **Render loop** (in `Player.tsx`): A `requestAnimationFrame` loop that:
 
@@ -251,6 +253,8 @@ A developer overlay for diagnosing playback performance. Gated by the `showFps` 
 
 The render loop owns the playback message only while `showFps` is on and visualization is `Off`; toggling `showFps` off clears it (synced via `showFpsRef`). The toggle lives in the Dev Tools settings menu (see below).
 
+To avoid a DOM write (and a DevTools highlight flash) every sample when the numbers are unchanged, the loop caches the last-written values in `lastRenderFpsRef`/`lastDecodedFpsRef` and only rewrites the message when render or decoded fps actually changes. The cache is invalidated (reset to `-1`) by the two other writers of the playback message — the `showFps` effect and the audio-visualization effect — so the readout is rewritten fresh whenever the render loop regains ownership (otherwise an unchanged value would be skipped and the message would stay blank/stale).
+
 ##### Dev Tools menu
 
 `PlaybackSettingsDevToolsMenu` (`src/ui-components/base/playback-settings/PlaybackSettingsDevToolsMenu.tsx`) is a sub-menu of `PlaybackSettings` for developer tools and overlays. Like the Flip menu, its items are independent toggles (chips with `data-toggled-on`, no icons) rather than a single-select list. Items: "Show FPS" (`showFps` atom) and "Show Preview" (`enablePreviewThumbnails` atom, default on). Add new dev toggles here. The menu is reached from the "Dev Tools" chip on the main settings menu and registered as `PlaybackSettingsMenu.DevTools`.
@@ -278,7 +282,9 @@ The overlay auto-hides (along with the mouse cursor) after 3 seconds of no mouse
 ##### Seeking
 
 - **Paused seek**: Calls `seek()` which updates `PlaybackClock`, then tells the decode worker to seek (draws a single frame at the new position without starting playback).
-- **Playing seek**: Pauses playback first (stops all queued audio nodes), then resumes at the new position.
+- **Playing seek**: Pauses playback first (stops all queued audio nodes), then **awaits the seek** (`await seek(time)`) before resuming. Because `seekImpl` awaits `decodeManager.seek` — which resolves only once the worker has drawn the seeked frame — the clock and audio are not restarted until the picture is ready. This prevents the clock running ahead of a slow decode and the resulting accelerated catch-up sprint (the worker would otherwise draw one buffered frame per tick to chase the already-advanced clock). The progress-bar `handleMouseUp` is `async` for this reason; `addEventListener` ignores its returned promise (lint-safe here since the config is not type-checked).
+
+  **Latest-seek-only resume**: `seek()` resolves to `false` when a newer seek was issued before it completed, and `handleMouseUp` resumes only when it resolves `true`. This stops a rapid re-grab (release → grab → release before the first decode finishes) from resuming against the older position while the newer seek is still decoding. Because the first pause flips the `isPlaying` prop to `false`, the "was playing before scrubbing" intent is held in `wasPlayingBeforeSeekRef` (set on mousedown, consumed/cleared only by the latest seek's resume) rather than read from `isPlaying` at mouseup, so the resume survives across the gestures.
 
 ##### Volume control (`src/ui-components/level-one/volume-control/VolumeControl.tsx`)
 

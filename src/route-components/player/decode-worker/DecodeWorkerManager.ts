@@ -39,7 +39,12 @@ export class DecodeWorkerManager {
   // after disposal cannot resurrect a worker from a dead manager.
   private disposed = false;
   private hasTransferredCanvas = false;
+  // Resolvers for in-flight seek() promises, keyed by the seek id echoed back in
+  // the worker's SeekComplete acknowledgment. Each resolves with whether the
+  // seek was still the latest when it completed (see seek()).
+  private pendingSeeks = new Map<number, (isLatest: boolean) => void>();
   private playbackWorker: Worker;
+  private seekCounter = 0;
   private thumbnailWorker: Worker;
 
   constructor() {
@@ -87,10 +92,30 @@ export class DecodeWorkerManager {
     });
   }
 
-  seek(time: number): void {
-    this.playbackWorker.postMessage({
-      time,
-      type: PlaybackWorkerRequestType.Seek,
+  /**
+   * Seeks the playback worker and resolves once it has decoded and drawn the
+   * frame at `time`. The caller should await this before resuming the clock so
+   * the clock can't run ahead of the picture during a slow decode (which would
+   * make playback sprint to catch up).
+   *
+   * @param time - The target timestamp in seconds.
+   * @returns A promise that resolves once the worker finishes this seek (drawing
+   * its frame, or bailing if superseded), to `true` if it is still the latest
+   * seek (its frame is on screen — safe to resume) or `false` if a newer seek
+   * has since been issued (that newer seek owns the resume).
+   */
+  seek(time: number): Promise<boolean> {
+    const seekId = ++this.seekCounter;
+    return new Promise<boolean>((resolve) => {
+      // The worker acknowledges every seek exactly once (even superseded ones),
+      // so each id is resolved when its SeekComplete arrives — no need to
+      // pre-resolve superseded ids here.
+      this.pendingSeeks.set(seekId, resolve);
+      this.playbackWorker.postMessage({
+        seekId,
+        time,
+        type: PlaybackWorkerRequestType.Seek,
+      });
     });
   }
 
@@ -187,8 +212,22 @@ export class DecodeWorkerManager {
   /** Terminates both workers. The manager is unusable after this. */
   dispose(): void {
     this.disposed = true;
+    this.drainPendingSeeks();
     this.playbackWorker.terminate();
     this.thumbnailWorker.terminate();
+  }
+
+  /**
+   * Resolves and clears all in-flight seek promises. Called when the playback
+   * worker is terminated, since the replacement worker never acknowledges the
+   * old seeks. Resolves to `false` (not latest) so callers don't resume against
+   * a torn-down worker.
+   */
+  private drainPendingSeeks(): void {
+    for (const resolve of this.pendingSeeks.values()) {
+      resolve(false);
+    }
+    this.pendingSeeks.clear();
   }
 
   /**
@@ -199,6 +238,7 @@ export class DecodeWorkerManager {
   recyclePlaybackWorker(): void {
     if (this.disposed) return;
     this.decodedFps = 0;
+    this.drainPendingSeeks();
     this.playbackWorker.terminate();
     this.playbackWorker = this.spawnPlaybackWorker();
     this.hasTransferredCanvas = false;
@@ -268,6 +308,13 @@ export class DecodeWorkerManager {
       const message = event.data;
       if (message.type === PlaybackWorkerEventType.DecodedFrameRate) {
         this.decodedFps = message.fps;
+      } else if (message.type === PlaybackWorkerEventType.SeekComplete) {
+        const resolve = this.pendingSeeks.get(message.seekId);
+        if (resolve) {
+          // Latest only if no newer seek has been issued since this one.
+          resolve(message.seekId === this.seekCounter);
+          this.pendingSeeks.delete(message.seekId);
+        }
       } else if (message.type === PlaybackWorkerEventType.DecodeError) {
         console.error(
           "DecodeWorkerManager: playback decode error:",

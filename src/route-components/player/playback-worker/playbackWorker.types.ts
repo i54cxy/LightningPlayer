@@ -14,6 +14,7 @@ export enum PlaybackWorkerEventType {
   DecodeError = "DecodeError",
   LoadFileComplete = "LoadFileComplete",
   LoadFileError = "LoadFileError",
+  SeekComplete = "SeekComplete",
   StartPlaybackComplete = "StartPlaybackComplete",
   StartPlaybackError = "StartPlaybackError",
 }
@@ -36,7 +37,7 @@ export interface IPlaybackDrawParams {
  */
 export type PlaybackWorkerRequest =
   | { blob: Blob; type: PlaybackWorkerRequestType.LoadFile; videoTrackIndex: number }
-  | { time: number; type: PlaybackWorkerRequestType.Seek }
+  | { seekId: number; time: number; type: PlaybackWorkerRequestType.Seek }
   | { isPlaying: boolean; type: PlaybackWorkerRequestType.SetPlaying }
   | {
       drawParams: IPlaybackDrawParams;
@@ -59,5 +60,6 @@ export type PlaybackWorkerEvent =
   | { error: Error; type: PlaybackWorkerEventType.DecodeError }
   | { type: PlaybackWorkerEventType.LoadFileComplete }
   | { error: Error; type: PlaybackWorkerEventType.LoadFileError }
+  | { seekId: number; type: PlaybackWorkerEventType.SeekComplete }
   | { type: PlaybackWorkerEventType.StartPlaybackComplete }
   | { error: Error; type: PlaybackWorkerEventType.StartPlaybackError };

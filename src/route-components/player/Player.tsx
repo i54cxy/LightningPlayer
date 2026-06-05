@@ -82,6 +82,10 @@ export const Player: FC = () => {
   // elapsed wall-clock time once per FPS_SAMPLE_INTERVAL_MS.
   const fpsFrameCountRef = useRef(0);
   const fpsLastSampleTimeRef = useRef(0);
+  // Last FPS values written to the playback message, so we can skip rewriting
+  // (and rebuilding the string) when the readout is unchanged.
+  const lastDecodedFpsRef = useRef(-1);
+  const lastRenderFpsRef = useRef(-1);
   // AudioSink produces audioBufferIterators for audio playback.
   const [currentAudioSink, setCurrentAudioSink] = useState<AudioBufferSink>();
   const audioBufferIteratorRef =
@@ -240,30 +244,34 @@ export const Player: FC = () => {
   };
 
   const seekImpl = useCallback(
-    (time: number) => {
+    async (time: number): Promise<boolean> => {
       if (!playbackClockRef.current) {
         console.error("seek: playbackClock not initialized.");
-        return;
+        return false;
       }
       if (!decodeManagerRef.current) {
         console.error("seek: decodeManager not initialized.");
-        return;
+        return false;
       }
 
       if (duration === undefined) {
         console.error("seek: duration not set.");
-        return;
+        return false;
       }
 
       // Always update clock and progress bar.
       progressRef.current = time;
       updateProgressBarDOM({ duration, progress: time });
       playbackClockRef.current.seek(time);
-      // Tell the worker to seek and draw at the new position. The worker no-ops
-      // if no playback session is set up (audio-only files).
+      // Tell the worker to seek and draw at the new position, awaiting until the
+      // seeked frame is on screen so a resuming caller doesn't start the clock
+      // ahead of the picture. Resolves to whether this is still the latest seek
+      // (only the latest may resume). Audio-only files have no video seek to
+      // supersede, so resuming is always safe.
       if (hasVideo) {
-        decodeManagerRef.current.seek(time);
+        return await decodeManagerRef.current.seek(time);
       }
+      return true;
     },
     [duration, hasVideo],
   );
@@ -323,6 +331,10 @@ export const Player: FC = () => {
   // (the render loop only owns the message while visualization is off).
   useEffect(() => {
     showFpsRef.current = showFps;
+    // The render loop is no longer the sole/last writer; invalidate the FPS
+    // cache so it rewrites a fresh readout when it next owns the message.
+    lastDecodedFpsRef.current = -1;
+    lastRenderFpsRef.current = -1;
     if (!showFps && audioVisualizationRef.current === AudioVisualization.Off) {
       updatePlaybackMessageDOM(undefined);
     }
@@ -573,9 +585,10 @@ export const Player: FC = () => {
           });
         }
 
-        // Open the playback iterator and draw the first frame at t=0.
+        // Open the playback iterator and draw the first frame at t=0. Not awaited
+        // — the initial draw happens in the background while load completes.
         if (videoTracks[0]) {
-          decodeManagerRef.current?.seek(0);
+          void decodeManagerRef.current?.seek(0);
         }
 
         // Batch all state updates. React 18+ batches these into a single
@@ -681,9 +694,17 @@ export const Player: FC = () => {
             audioVisualizationRef.current === AudioVisualization.Off
           ) {
             const decodedFps = decodeManagerRef.current?.decodedFps ?? 0;
-            updatePlaybackMessageDOM(
-              `Render ${renderFps} fps · Decoded ${decodedFps} fps`,
-            );
+            // Skip the string build and DOM write when the readout is unchanged.
+            if (
+              renderFps !== lastRenderFpsRef.current ||
+              decodedFps !== lastDecodedFpsRef.current
+            ) {
+              lastDecodedFpsRef.current = decodedFps;
+              lastRenderFpsRef.current = renderFps;
+              updatePlaybackMessageDOM(
+                `Render ${renderFps} fps · Decoded ${decodedFps} fps`,
+              );
+            }
           }
         }
       }
@@ -815,6 +836,10 @@ export const Player: FC = () => {
       // Audio visualization is off; the render loop owns the message (FPS).
       updatePlaybackMessageDOM(undefined);
     }
+    // This effect just wrote (or cleared) the message, so the render loop is no
+    // longer the last writer; invalidate the FPS cache to force a fresh rewrite.
+    lastDecodedFpsRef.current = -1;
+    lastRenderFpsRef.current = -1;
   }, [
     audioVisualization,
     analyserNodeWindow,
@@ -977,6 +1002,7 @@ export const Player: FC = () => {
       setIsPlaying(true);
       await audioContext.resume();
       playbackClock.play();
+      decodeManagerRef.current?.setPlaying(true);
 
       void audioBufferIteratorRef.current?.return();
       audioBufferIteratorRef.current = audioSink.buffers(seekTime);
